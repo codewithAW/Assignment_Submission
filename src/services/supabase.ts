@@ -39,3 +39,4 @@ export function clearSupabaseConfig() {
   localStorage.removeItem('cc_supabase_anon_key');
   window.location.reload();
 }
+

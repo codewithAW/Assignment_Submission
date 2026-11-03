@@ -208,3 +208,4 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Grant execute permissions to anon and authenticated
 GRANT EXECUTE ON FUNCTION public.check_submission_secure(TEXT, TEXT) TO anon, authenticated;
+

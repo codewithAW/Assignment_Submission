@@ -73,3 +73,4 @@ export interface SubmitAssignmentResponse {
   version?: number;
   is_resubmission?: boolean;
 }
+

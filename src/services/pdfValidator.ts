@@ -111,3 +111,4 @@ export async function validatePDFFile(file: File): Promise<PDFValidationResult> 
     };
   }
 }
+

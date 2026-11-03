@@ -39,3 +39,4 @@ CREATE POLICY "Service role full storage access"
     TO service_role
     USING (bucket_id = 'assignments')
     WITH CHECK (bucket_id = 'assignments');
+
