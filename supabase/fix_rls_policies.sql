@@ -39,3 +39,4 @@ CREATE POLICY "Allow student PDF uploads"
 
 -- 5. Reload PostgREST schema cache
 NOTIFY pgrst, 'reload schema';
+
