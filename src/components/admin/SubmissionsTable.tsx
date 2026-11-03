@@ -31,9 +31,9 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
 }) => {
   if (submissions.length === 0) {
     return (
-      <div className="py-16 text-center text-slate-500 dark:text-slate-400 glossy-card rounded-3xl">
-        <FileText className="w-12 h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
-        <h4 className="text-base font-bold text-slate-800 dark:text-slate-300">No submissions found</h4>
+      <div className="py-14 sm:py-16 text-center text-slate-500 dark:text-slate-400 glossy-card rounded-2xl sm:rounded-3xl px-4">
+        <FileText className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-3 text-slate-400 dark:text-slate-600" />
+        <h4 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-300">No submissions found</h4>
         <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mx-auto mt-1">
           No records match the current filter criteria or no assignments have been submitted yet.
         </p>
@@ -42,7 +42,7 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
   }
 
   return (
-    <div className="glossy-card rounded-3xl overflow-hidden shadow-xl">
+    <div className="glossy-card rounded-2xl sm:rounded-3xl overflow-hidden shadow-xl">
       {/* Desktop Table View */}
       <div className="hidden lg:block overflow-x-auto">
         <table className="w-full text-left text-xs">
@@ -104,37 +104,27 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                         href={sub.live_website_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800/40 text-sky-700 dark:text-sky-300 hover:text-sky-800 dark:hover:text-white transition font-mono max-w-[140px] truncate"
-                        title={sub.live_website_url}
+                        className="inline-flex items-center gap-1.5 text-sky-600 dark:text-sky-400 hover:underline font-mono"
                       >
-                        <Globe className="w-3 h-3 shrink-0" />
-                        <span className="truncate">Open Site</span>
-                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                        <Globe className="w-3.5 h-3.5" />
+                        <span className="truncate max-w-[140px]">{sub.live_website_url.replace(/^https?:\/\//, '')}</span>
                       </a>
                     ) : (
-                      <span className="text-slate-400 dark:text-slate-600 italic">—</span>
+                      <span className="text-slate-400 dark:text-slate-600">—</span>
                     )}
                   </td>
 
-                  {/* Submission Date & Time */}
-                  <td className="py-4 px-5 font-mono text-slate-500 dark:text-slate-400">
-                    <div className="text-slate-800 dark:text-slate-200">{formatDate(sub.created_at)}</div>
-                    {sub.status === 'rejected' && sub.rejected_at && (
-                      <div className="text-[11px] text-rose-500 dark:text-rose-400 mt-0.5">
-                        Rejected: {formatDate(sub.rejected_at)}
-                      </div>
-                    )}
+                  {/* Submission Date */}
+                  <td className="py-4 px-5 font-mono text-slate-600 dark:text-slate-300">
+                    {formatDate(sub.created_at)}
                   </td>
 
-                  {/* Status */}
+                  {/* Status Badge */}
                   <td className="py-4 px-5">
                     <StatusBadge status={sub.status} />
                     {sub.status === 'rejected' && sub.rejection_reason && (
-                      <div 
-                        className="text-[10px] text-rose-600 dark:text-rose-300/80 mt-1 max-w-[160px] truncate" 
-                        title={sub.rejection_reason}
-                      >
-                        {sub.rejection_reason}
+                      <div className="text-[10px] text-rose-600 dark:text-rose-400 truncate max-w-[160px] mt-1" title={sub.rejection_reason}>
+                        Note: {sub.rejection_reason}
                       </div>
                     )}
                   </td>
@@ -193,7 +183,7 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
         </table>
       </div>
 
-      {/* Mobile Responsive Card View */}
+      {/* Mobile Responsive Card View (HCI Best Practice for Small Screens) */}
       <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800">
         {submissions.map((sub) => {
           const latestFile = sub.files && sub.files.length > 0 
@@ -202,25 +192,25 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
           const hasMultipleVersions = (sub.files?.length || 0) > 1;
 
           return (
-            <div key={sub.id} className="p-5 space-y-3">
-              <div className="flex items-start justify-between">
+            <div key={sub.id} className="p-4 sm:p-5 space-y-2.5 sm:space-y-3">
+              <div className="flex items-start justify-between gap-2">
                 <div>
-                  <h4 className="font-bold text-slate-900 dark:text-white text-base">{sub.student_name}</h4>
-                  <p className="font-mono text-sky-600 dark:text-sky-400 text-xs mt-0.5">Roll No: {sub.roll_number}</p>
-                  <p className="font-mono text-slate-400 text-[10px]">Ref: {sub.submission_ref}</p>
+                  <h4 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base">{sub.student_name}</h4>
+                  <p className="font-mono text-sky-600 dark:text-sky-400 text-xs mt-0.5 font-semibold">Roll No: {sub.roll_number}</p>
+                  <p className="font-mono text-slate-400 dark:text-slate-500 text-[10px]">Ref: {sub.submission_ref}</p>
                 </div>
                 <StatusBadge status={sub.status} />
               </div>
 
               <div className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 font-mono">
                 <VersionBadge version={sub.current_version} />
-                <span className="truncate">{latestFile?.file_name || 'Assignment.pdf'}</span>
+                <span className="truncate max-w-[220px]">{latestFile?.file_name || 'Assignment.pdf'}</span>
               </div>
 
               {hasMultipleVersions && (
                 <button
                   onClick={() => onOpenVersionModal(sub)}
-                  className="inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 font-mono font-semibold"
+                  className="inline-flex items-center gap-1 text-xs text-violet-600 dark:text-violet-400 font-mono font-semibold touch-manipulation min-h-[30px]"
                 >
                   <History className="w-3.5 h-3.5" />
                   <span>Inspect {sub.files?.length} versions</span>
@@ -228,7 +218,7 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
               )}
 
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" />
+                <Clock className="w-3.5 h-3.5 shrink-0" />
                 <span>{formatDate(sub.created_at)}</span>
               </div>
 
@@ -238,19 +228,19 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                 </div>
               )}
 
-              {/* Action buttons */}
+              {/* Action buttons (Touch-friendly and nicely wrapped) */}
               <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
                 {latestFile && (
                   <>
                     <button
                       onClick={() => onViewPdf(latestFile.file_path, latestFile.file_name)}
-                      className="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 text-xs font-semibold flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 border border-sky-200 dark:border-sky-500/30 text-sky-700 dark:text-sky-300 text-xs font-semibold flex items-center gap-1.5 touch-manipulation min-h-[36px]"
                     >
                       <Eye className="w-3.5 h-3.5" /> View PDF
                     </button>
                     <button
                       onClick={() => onDownloadPdf(latestFile.file_path, latestFile.file_name)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5"
+                      className="px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center gap-1.5 touch-manipulation min-h-[36px]"
                     >
                       <Download className="w-3.5 h-3.5" /> Download
                     </button>
@@ -262,7 +252,7 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                     href={sub.live_website_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1.5 touch-manipulation min-h-[36px]"
                   >
                     <Globe className="w-3.5 h-3.5" /> Live Demo
                   </a>
@@ -271,7 +261,7 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                 {sub.status !== 'rejected' && (
                   <button
                     onClick={() => onOpenRejectModal(sub)}
-                    className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5 ml-auto"
+                    className="px-3 py-1.5 rounded-xl bg-rose-50 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/40 text-rose-700 dark:text-rose-300 text-xs font-bold flex items-center gap-1.5 touch-manipulation min-h-[36px]"
                   >
                     <XCircle className="w-3.5 h-3.5" /> Reject
                   </button>

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Lock, Mail, Key, Shield, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Mail, Key, Shield, ArrowLeft, AlertCircle, Lock } from 'lucide-react';
 import { submissionService } from '../../services/submissionService';
 import type { AdminUser } from '../../types';
 
@@ -34,25 +34,25 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
   };
 
   return (
-    <div className="min-h-[80vh] flex items-center justify-center px-4 py-8">
+    <div className="min-h-[75vh] sm:min-h-[80vh] flex items-center justify-center px-3.5 sm:px-4 py-6 sm:py-8">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.25 }}
-        className="w-full max-w-md glossy-card rounded-3xl p-8 sm:p-9 shadow-2xl relative overflow-hidden"
+        className="w-full max-w-md glossy-card rounded-2xl sm:rounded-3xl p-5 sm:p-8 md:p-9 shadow-2xl relative overflow-hidden"
       >
         <button
           onClick={onBackToStudentPortal}
-          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white mb-6 transition"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white mb-5 sm:mb-6 transition touch-manipulation min-h-[36px]"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Student Portal
         </button>
 
-        <div className="text-center mb-6 space-y-2">
-          <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-sky-400/20 to-sky-600/20 dark:from-sky-500/20 dark:to-sky-700/20 border border-sky-400/30 dark:border-sky-500/30 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-md">
-            <Shield className="w-7 h-7" />
+        <div className="text-center mb-5 sm:mb-6 space-y-2">
+          <div className="w-12 h-12 sm:w-14 sm:h-14 mx-auto rounded-2xl bg-gradient-to-br from-sky-400/20 to-sky-600/20 dark:from-sky-500/20 dark:to-sky-700/20 border border-sky-400/30 dark:border-sky-500/30 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-md">
+            <Shield className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
+          <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
             Administrator Portal
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -61,7 +61,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
         </div>
 
         {error && (
-          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-200 text-xs mb-5 flex items-start gap-2.5">
+          <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/30 text-rose-900 dark:text-rose-200 text-xs mb-4 sm:mb-5 flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
             <div className="flex-1">{error}</div>
           </div>
@@ -69,7 +69,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
               Administrator Email
             </label>
             <div className="relative">
@@ -82,14 +82,14 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
                 placeholder="shahmproject@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-sm"
+                className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-base sm:text-sm"
                 disabled={isLoading}
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
               Password
             </label>
             <div className="relative">
@@ -102,7 +102,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-sm"
+                className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-base sm:text-sm"
                 disabled={isLoading}
               />
             </div>
@@ -111,7 +111,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-sm shadow-md transition-all duration-200 flex items-center justify-center gap-2 ${
+            className={`w-full py-3.5 px-4 rounded-2xl font-bold text-white text-xs sm:text-sm shadow-md transition-all duration-200 flex items-center justify-center gap-2 min-h-[46px] touch-manipulation ${
               isLoading
                 ? 'bg-slate-400 dark:bg-slate-800 text-slate-200 cursor-not-allowed'
                 : 'glossy-btn-primary'
@@ -128,7 +128,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             ) : (
               <>
                 <Lock className="w-4 h-4" />
-                <span>Sign In to Dashboard</span>
+                <span>Log In to Dashboard</span>
               </>
             )}
           </button>

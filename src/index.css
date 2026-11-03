@@ -195,3 +195,17 @@ html.light .glossy-input:focus {
 .specular-border {
   border-top: 1px solid rgba(255, 255, 255, 0.3);
 }
+
+
+/* Responsive & Mobile HCI Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.touch-manipulation {
+  touch-action: manipulation;
+}

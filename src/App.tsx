@@ -48,8 +48,8 @@ export function App() {
       {/* Global Glossy Navigation Bar */}
       <Navbar currentPath={currentPath} onNavigate={(path) => navigateTo(path)} />
 
-      {/* Page Routing */}
-      <main>
+      {/* Page Routing with Mobile Bottom Clearance */}
+      <main className="pb-20 md:pb-8">
         {currentPath === '/admin' ? (
           <AdminPortal onBackToStudentPortal={() => navigateTo('/')} />
         ) : currentPath === '/submit' ? (
