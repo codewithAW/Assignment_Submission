@@ -88,7 +88,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const submitted = submissions.filter((s) => s.status === 'submitted').length;
     const rejected = submissions.filter((s) => s.status === 'rejected').length;
 
-    // Calculate unsubmitted from roster
     const submittedRolls = new Set(submissions.map((s) => s.roll_number));
     const unsubmitted = roster.filter((r) => !submittedRolls.has(r.roll_number)).length;
 
@@ -99,12 +98,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const filteredSubmissions = useMemo(() => {
     return submissions
       .filter((sub) => {
-        // Status filter
         if (statusFilter !== 'all' && statusFilter !== 'roster') {
           if (sub.status !== statusFilter) return false;
         }
 
-        // Search query filter (matches student name or roll number)
         if (searchQuery.trim()) {
           const q = searchQuery.toLowerCase().trim();
           const nameMatch = sub.student_name.toLowerCase().includes(q);
@@ -122,17 +119,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       });
   }, [submissions, statusFilter, searchQuery, sortOrder]);
 
-  // Pagination
   const totalPages = Math.max(1, Math.ceil(filteredSubmissions.length / pageSize));
   const paginatedSubmissions = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
     return filteredSubmissions.slice(start, start + pageSize);
   }, [filteredSubmissions, currentPage, pageSize]);
 
-  // Admin Actions
   const handleViewPdf = async (filePath: string, fileName: string) => {
     try {
-      showToast('info', 'Generating Secure Signed Stream', 'Verifying admin authorization...');
+      showToast('info', 'Generating Secure Stream', 'Authorizing administrator access...');
       const url = await submissionService.getSignedPdfUrl(filePath, false, fileName);
       setPreviewPdfUrl(url);
       setPreviewPdfName(fileName);
@@ -172,141 +167,131 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   return (
     <div className="min-h-screen relative z-10">
-      {/* Toast notifications */}
       <ToastContainer
         toasts={toasts}
         onDismiss={(id) => setToasts((prev) => prev.filter((t) => t.id !== id))}
       />
 
-      {/* Top Admin Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-[#080b14]/90 backdrop-blur-xl">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-cyan-500 to-violet-600 p-0.5 shadow-lg shadow-cyan-500/20">
-              <div className="w-full h-full bg-[#080b14] rounded-[10px] flex items-center justify-center text-cyan-400">
-                <GraduationCap className="w-5 h-5" />
-              </div>
-            </div>
-            <div>
-              <span className="font-bold text-sm sm:text-base text-white tracking-tight flex items-center gap-2">
-                CS421 <span className="text-slate-500 font-normal">|</span> Instructor Control Center
-              </span>
-              <span className="text-[11px] text-slate-400 block -mt-0.5 font-mono">
-                Logged in as {user.email} ({user.role})
-              </span>
-            </div>
+      {/* Top Admin Sub-bar */}
+      <div className="border-b border-slate-200 dark:border-white/10 bg-slate-50/80 dark:bg-slate-900/40 backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <GraduationCap className="w-5 h-5 text-sky-500" />
+            <span className="font-bold text-xs sm:text-sm text-slate-800 dark:text-slate-200">
+              Instructor Dashboard • Logged in as <span className="font-mono text-sky-600 dark:text-sky-400">{user.email}</span>
+            </span>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2">
             <button
               onClick={() => loadData(true)}
               disabled={isRefreshing}
-              className="p-2 text-slate-400 hover:text-white rounded-xl bg-slate-900 border border-slate-800 transition"
+              className="p-1.5 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm transition"
               title="Refresh Data"
             >
-              <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-cyan-400' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-sky-500' : ''}`} />
             </button>
 
             <button
               onClick={onBackToPortal}
-              className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-800 text-xs font-medium transition"
+              className="px-3 py-1 rounded-xl bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold shadow-sm transition"
             >
-              Student Portal View
+              Student View
             </button>
 
             <button
               onClick={onLogout}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 text-xs font-bold transition shadow-sm"
             >
               <LogOut className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Sign Out</span>
+              <span>Sign Out</span>
             </button>
           </div>
         </div>
-      </header>
+      </div>
 
       {/* Main Dashboard Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-10 space-y-8">
-        {/* Metric Statistics Cards */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+        {/* Metric Statistics Cards (Glossy) */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
           {/* Total Submissions */}
-          <div className="glass-card rounded-2xl border border-slate-700/60 p-5 shadow-xl relative overflow-hidden group">
+          <div className="glossy-card rounded-3xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Total Submissions
               </span>
-              <div className="w-9 h-9 rounded-xl bg-cyan-950/60 border border-cyan-500/30 flex items-center justify-center text-cyan-400">
+              <div className="w-9 h-9 rounded-2xl bg-sky-100 dark:bg-sky-950/60 border border-sky-300 dark:border-sky-500/30 flex items-center justify-center text-sky-600 dark:text-sky-400 shadow-sm">
                 <FileText className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-white font-mono">
+            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
               {stats.total}
             </div>
-            <div className="mt-1 text-[11px] text-slate-400">
+            <div className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
               Submitted compiler assignments
             </div>
           </div>
 
           {/* Submitted Assignments */}
-          <div className="glass-card rounded-2xl border border-emerald-500/30 p-5 shadow-xl relative overflow-hidden group">
+          <div className="glossy-card rounded-3xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-emerald-400">
+              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                 Active / Submitted
               </span>
-              <div className="w-9 h-9 rounded-xl bg-emerald-950/60 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
+              <div className="w-9 h-9 rounded-2xl bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-500/40 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shadow-sm">
                 <CheckCircle2 className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-white font-mono">
+            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
               {stats.submitted}
             </div>
-            <div className="mt-1 text-[11px] text-emerald-400/80">
+            <div className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400/80">
               Awaiting or completed evaluation
             </div>
           </div>
 
           {/* Rejected Assignments */}
-          <div className="glass-card rounded-2xl border border-rose-500/30 p-5 shadow-xl relative overflow-hidden group">
+          <div className="glossy-card rounded-3xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-rose-400">
+              <span className="text-xs font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">
                 Rejected Assignments
               </span>
-              <div className="w-9 h-9 rounded-xl bg-rose-950/60 border border-rose-500/40 flex items-center justify-center text-rose-400">
+              <div className="w-9 h-9 rounded-2xl bg-rose-100 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-500/40 flex items-center justify-center text-rose-600 dark:text-rose-400 shadow-sm">
                 <XCircle className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-white font-mono">
+            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
               {stats.rejected}
             </div>
-            <div className="mt-1 text-[11px] text-rose-400/80">
+            <div className="mt-1 text-[11px] text-rose-600 dark:text-rose-400/80">
               Resubmission requested
             </div>
           </div>
 
           {/* Unsubmitted Roster */}
-          <div className="glass-card rounded-2xl border border-amber-500/30 p-5 shadow-xl relative overflow-hidden group">
+          <div className="glossy-card rounded-3xl p-5 shadow-sm">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-wider text-amber-400">
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
                 Pending Submission
               </span>
-              <div className="w-9 h-9 rounded-xl bg-amber-950/60 border border-amber-500/40 flex items-center justify-center text-amber-400">
+              <div className="w-9 h-9 rounded-2xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-500/40 flex items-center justify-center text-amber-600 dark:text-amber-400 shadow-sm">
                 <Clock className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-white font-mono">
+            <div className="mt-3 text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white font-mono">
               {stats.unsubmitted}
             </div>
-            <div className="mt-1 text-[11px] text-amber-400/80">
+            <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400/80">
               From instructor roster ({roster.length} total)
             </div>
           </div>
         </div>
 
-        {/* Filter, Search, and Sort Controls Bar */}
-        <div className="glass-card rounded-2xl border border-slate-700/60 p-4 sm:p-5 flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
+        {/* Filter, Search, and Sort Controls Bar (Glossy) */}
+        <div className="glossy-card rounded-3xl p-4 sm:p-5 flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between shadow-sm">
           {/* Search box */}
           <div className="relative flex-1 max-w-md">
-            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+            <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
               <Search className="w-4 h-4" />
             </div>
             <input
@@ -317,23 +302,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 setSearchQuery(e.target.value);
                 setCurrentPage(1);
               }}
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-slate-100 placeholder:text-slate-500 text-xs sm:text-sm transition"
+              className="glossy-input w-full pl-10 pr-4 py-2.5 rounded-2xl text-xs sm:text-sm"
             />
           </div>
 
           {/* Filter Tabs & Sort Toggle */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {/* Status Filter buttons */}
-            <div className="flex items-center p-1 rounded-xl bg-slate-900 border border-slate-800 text-xs font-medium">
+            <div className="flex items-center p-1 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs font-semibold">
               <button
                 onClick={() => {
                   setStatusFilter('all');
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-1.5 rounded-xl transition ${
                   statusFilter === 'all'
-                    ? 'bg-cyan-500 text-white font-semibold shadow'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-sky-500 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 All ({submissions.length})
@@ -344,10 +329,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setStatusFilter('submitted');
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-1.5 rounded-xl transition ${
                   statusFilter === 'submitted'
-                    ? 'bg-emerald-600 text-white font-semibold shadow'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Submitted ({stats.submitted})
@@ -358,10 +343,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setStatusFilter('rejected');
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-1.5 rounded-xl transition ${
                   statusFilter === 'rejected'
-                    ? 'bg-rose-600 text-white font-semibold shadow'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Rejected ({stats.rejected})
@@ -372,10 +357,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   setStatusFilter('roster');
                   setCurrentPage(1);
                 }}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                className={`px-3 py-1.5 rounded-xl transition ${
                   statusFilter === 'roster'
-                    ? 'bg-indigo-600 text-white font-semibold shadow'
-                    : 'text-slate-400 hover:text-white'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 Roster ({roster.length})
@@ -385,10 +370,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             {/* Sort Toggle */}
             <button
               onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 text-xs font-mono transition"
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-2xl bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 text-xs font-mono transition shadow-sm"
               title="Toggle Sort Order"
             >
-              <ArrowUpDown className="w-3.5 h-3.5 text-cyan-400" />
+              <ArrowUpDown className="w-3.5 h-3.5 text-sky-500" />
               <span>{sortOrder === 'desc' ? 'Newest First' : 'Oldest First'}</span>
             </button>
           </div>
@@ -396,9 +381,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
         {/* Content Table: Either Submissions Table or Roster Table */}
         {isLoading ? (
-          <div className="py-20 text-center glass-card rounded-2xl border border-slate-800">
-            <div className="w-8 h-8 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-            <p className="text-xs text-slate-400 font-mono">Synchronizing submissions archive...</p>
+          <div className="py-20 text-center glossy-card rounded-3xl">
+            <div className="w-8 h-8 border-2 border-sky-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">Synchronizing submissions archive...</p>
           </div>
         ) : statusFilter === 'roster' ? (
           <RosterTable roster={roster} submissions={submissions} />
@@ -414,7 +399,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
             {/* Pagination Controls */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between p-4 glass-card rounded-2xl border border-slate-800 text-xs text-slate-400 font-mono">
+              <div className="flex items-center justify-between p-4 glossy-card rounded-2xl text-xs text-slate-600 dark:text-slate-400 font-mono">
                 <div>
                   Showing {(currentPage - 1) * pageSize + 1} to{' '}
                   {Math.min(currentPage * pageSize, filteredSubmissions.length)} of{' '}
@@ -425,19 +410,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <button
                     disabled={currentPage === 1}
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                    className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-800 transition"
+                    className="p-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-sm"
                   >
                     <ChevronLeft className="w-4 h-4" />
                   </button>
 
-                  <span className="px-2 font-bold text-slate-200">
+                  <span className="px-2 font-bold text-slate-900 dark:text-slate-200">
                     Page {currentPage} of {totalPages}
                   </span>
 
                   <button
                     disabled={currentPage === totalPages}
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                    className="p-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed hover:bg-slate-800 transition"
+                    className="p-1.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 disabled:opacity-30 disabled:cursor-not-allowed transition shadow-sm"
                   >
                     <ChevronRight className="w-4 h-4" />
                   </button>
@@ -446,9 +431,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             )}
           </div>
         )}
-      </main>
+      </div>
 
-      {/* Rejection Modal */}
+      {/* Modals */}
       <RejectionModal
         submission={rejectingSub}
         isOpen={!!rejectingSub}
@@ -456,7 +441,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onConfirmReject={handleConfirmReject}
       />
 
-      {/* Version History Modal */}
       <VersionHistoryModal
         submission={versionSub}
         isOpen={!!versionSub}
@@ -465,7 +449,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onDownloadPdf={handleDownloadPdf}
       />
 
-      {/* PDF Stream Viewer Modal */}
       <PdfViewerModal
         isOpen={!!previewPdfUrl}
         onClose={() => setPreviewPdfUrl(null)}

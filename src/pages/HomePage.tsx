@@ -5,11 +5,11 @@ import {
   Search, 
   ShieldCheck, 
   Cpu, 
-  Layers, 
-  Code2, 
   ArrowRight, 
   CheckCircle2, 
-  FileText
+  FileText,
+  Clock,
+  Sparkles
 } from 'lucide-react';
 
 interface HomePageProps {
@@ -22,181 +22,181 @@ export const HomePage: React.FC<HomePageProps> = ({
   onNavigateToCheck,
 }) => {
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-10 sm:py-14 space-y-12">
-      {/* Hero Header */}
-      <div className="text-center space-y-4">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-10">
+      {/* Hero Welcome (HCI Rule: Instant Clarity & Focus) */}
+      <div className="text-center space-y-3.5 max-w-3xl mx-auto">
         <motion.div
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-          className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-xs font-mono text-cyan-300 shadow-lg shadow-cyan-950/40"
+          className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-500/30 text-xs font-semibold text-sky-700 dark:text-sky-300 shadow-sm"
         >
-          <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-          <span>CS421 • Compiler Construction Assignment Portal</span>
+          <Sparkles className="w-3.5 h-3.5 text-sky-500 dark:text-sky-400" />
+          <span>CS421: Compiler Construction • Assignment Portal</span>
         </motion.div>
 
         <motion.h1
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-          className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight leading-tight"
+          transition={{ delay: 0.05 }}
+          className="text-3xl sm:text-5xl font-extrabold text-slate-900 dark:text-white tracking-tight leading-tight"
         >
-          Welcome to the{' '}
-          <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-violet-400">
-            Assignment Submission
-          </span>{' '}
-          Vault
+          Assignment Submission{' '}
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-sky-500 via-indigo-500 to-violet-500">
+            Portal
+          </span>
         </motion.h1>
 
         <motion.p
-          initial={{ opacity: 0, y: 15 }}
+          initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15 }}
-          className="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed"
+          transition={{ delay: 0.1 }}
+          className="text-sm sm:text-base text-slate-600 dark:text-slate-300 leading-relaxed"
         >
-          Submit your compiler implementation report, verify binary header integrity, and monitor grading review status in real time.
+          Submit your compiler implementation report and check your real-time review status.
+          All documents undergo server-grade <code className="font-mono text-sky-600 dark:text-sky-400 font-semibold">%PDF-</code> binary verification.
         </motion.p>
       </div>
 
-      {/* Main Two Navigation Cards */}
+      {/* Two Clear Primary Action Cards (HCI Rule: Hick's Law - Minimal Cognitive Choices) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Card 1: Submit Assignment */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.2 }}
+          transition={{ delay: 0.15 }}
           onClick={onNavigateToSubmit}
-          className="glass-card rounded-2xl border border-cyan-500/30 hover:border-cyan-400/60 p-7 cursor-pointer transition-all duration-300 group hover:shadow-2xl hover:shadow-cyan-500/10 relative overflow-hidden flex flex-col justify-between"
+          className="glossy-card rounded-3xl p-7 sm:p-8 cursor-pointer group hover:scale-[1.01] transition-all flex flex-col justify-between"
         >
-          {/* Subtle glow */}
-          <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/10 blur-3xl pointer-events-none -z-10 group-hover:bg-cyan-500/20 transition-colors" />
-
           <div>
-            <div className="w-14 h-14 rounded-2xl bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400 mb-5 group-hover:scale-105 transition-transform shadow-lg shadow-cyan-950/60">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-sky-400/20 to-sky-600/20 dark:from-sky-500/20 dark:to-sky-700/20 border border-sky-400/40 dark:border-sky-500/40 flex items-center justify-center text-sky-600 dark:text-sky-400 mb-5 group-hover:scale-105 transition-transform shadow-md">
               <UploadCloud className="w-7 h-7" />
             </div>
 
-            <div className="flex items-center gap-2 text-cyan-400 text-xs font-mono font-semibold uppercase tracking-wider mb-1">
-              <span>Step 1 • Student Submission</span>
+            <div className="text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400 mb-1">
+              Step 1 • Student Portal
             </div>
 
-            <h2 className="text-2xl font-bold text-white group-hover:text-cyan-300 transition-colors mb-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-sky-600 dark:group-hover:text-sky-300 transition-colors mb-2">
               Submit Assignment
             </h2>
 
-            <p className="text-sm text-slate-400 leading-relaxed mb-6">
-              Upload your Project 2 PDF documentation, grammar specifications, and optional live web demo URL. Includes binary <code className="text-cyan-300 font-mono">%PDF-</code> signature verification.
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+              Upload your Project 2 PDF documentation and optional demo URL. Validates binary signatures and protects against accidental duplicate submissions.
             </p>
           </div>
 
-          <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-mono">Accepts genuine PDF files only (Max 15MB)</span>
-            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-white font-semibold text-xs transition shadow-md shadow-cyan-500/30 group-hover:translate-x-1">
-              <span>Go to Submission</span>
+          <div className="pt-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">PDF Only • Max 15MB</span>
+            <button
+              type="button"
+              className="glossy-btn-primary px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow"
+            >
+              <span>Submit Now</span>
               <ArrowRight className="w-3.5 h-3.5" />
-            </div>
+            </button>
           </div>
         </motion.div>
 
         {/* Card 2: Check Assignment Submission */}
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
+          initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, delay: 0.25 }}
+          transition={{ delay: 0.2 }}
           onClick={onNavigateToCheck}
-          className="glass-card rounded-2xl border border-violet-500/30 hover:border-violet-400/60 p-7 cursor-pointer transition-all duration-300 group hover:shadow-2xl hover:shadow-violet-500/10 relative overflow-hidden flex flex-col justify-between"
+          className="glossy-card rounded-3xl p-7 sm:p-8 cursor-pointer group hover:scale-[1.01] transition-all flex flex-col justify-between"
         >
-          {/* Subtle glow */}
-          <div className="absolute top-0 right-0 w-48 h-48 bg-violet-500/10 blur-3xl pointer-events-none -z-10 group-hover:bg-violet-500/20 transition-colors" />
-
           <div>
-            <div className="w-14 h-14 rounded-2xl bg-violet-950/70 border border-violet-500/40 flex items-center justify-center text-violet-400 mb-5 group-hover:scale-105 transition-transform shadow-lg shadow-violet-950/60">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-violet-400/20 to-violet-600/20 dark:from-violet-500/20 dark:to-violet-700/20 border border-violet-400/40 dark:border-violet-500/40 flex items-center justify-center text-violet-600 dark:text-violet-400 mb-5 group-hover:scale-105 transition-transform shadow-md">
               <Search className="w-7 h-7" />
             </div>
 
-            <div className="flex items-center gap-2 text-violet-400 text-xs font-mono font-semibold uppercase tracking-wider mb-1">
-              <span>Step 2 • Real-Time Checker</span>
+            <div className="text-xs font-bold uppercase tracking-wider text-violet-600 dark:text-violet-400 mb-1">
+              Step 2 • Status Verification
             </div>
 
-            <h2 className="text-2xl font-bold text-white group-hover:text-violet-300 transition-colors mb-2">
-              Check Assignment Submission
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white group-hover:text-violet-600 dark:group-hover:text-violet-300 transition-colors mb-2">
+              Check Submission
             </h2>
 
-            <p className="text-sm text-slate-400 leading-relaxed mb-6">
-              Track your submission status in the database. Instantly verify whether your assignment is <strong>Submitted</strong>, <strong>Rejected</strong>, or <strong>Pending</strong>, with instructor feedback.
+            <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed mb-6">
+              Enter your Roll Number to see if your assignment has been <strong>Submitted</strong>, <strong>Rejected</strong>, or is pending evaluation. If rejected, submit a corrected version instantly.
             </p>
           </div>
 
-          <div className="pt-4 border-t border-slate-800/80 flex items-center justify-between">
-            <span className="text-xs text-slate-500 font-mono">Requires Roll Number & Verification Code</span>
-            <div className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition shadow-md shadow-violet-600/30 group-hover:translate-x-1">
+          <div className="pt-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-between">
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">Real-Time Database Query</span>
+            <button
+              type="button"
+              className="glossy-btn-violet px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow"
+            >
               <span>Check Status</span>
               <ArrowRight className="w-3.5 h-3.5" />
-            </div>
+            </button>
           </div>
         </motion.div>
       </div>
 
-      {/* Course & Project Specifications */}
-      <div className="glass-card rounded-2xl border border-slate-700/60 p-6 sm:p-8 space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+      {/* Project Specs & Guidelines Card */}
+      <div className="glossy-card rounded-3xl p-6 sm:p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-white/10 pb-4">
           <div className="flex items-center gap-2.5">
-            <Code2 className="w-5 h-5 text-cyan-400" />
-            <h3 className="font-bold text-white text-lg">Project 2 Details & Specifications</h3>
-          </div>
-          <span className="text-xs font-mono px-3 py-1 rounded-full bg-cyan-950/50 border border-cyan-500/30 text-cyan-300">
-            Due: Fall Term
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-white">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>AST & Semantic Analysis</span>
+            <div className="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/30 flex items-center justify-center text-sky-500 dark:text-sky-400">
+              <Cpu className="w-4 h-4" />
             </div>
-            <p className="text-slate-400 leading-relaxed">
-              Generate Abstract Syntax Trees from source input, perform symbol table lookup, type checking, and scope resolution.
-            </p>
-          </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-white">
-              <Layers className="w-4 h-4 text-cyan-400" />
-              <span>Grammar & Parser Tables</span>
+            <div>
+              <h3 className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">
+                Project 2: AST Generation & Code Synthesis
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Department of Computer Science • CS421
+              </p>
             </div>
-            <p className="text-slate-400 leading-relaxed">
-              Include LL(1) / LR(1) parsing tables, shift-reduce conflict resolution, and grammar ambiguity proofs in your PDF.
-            </p>
           </div>
-
-          <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 space-y-2">
-            <div className="flex items-center gap-2 font-semibold text-white">
-              <ShieldCheck className="w-4 h-4 text-violet-400" />
-              <span>Version Controlled Resubmission</span>
-            </div>
-            <p className="text-slate-400 leading-relaxed">
-              If an instructor rejects your submission, you may upload a corrected version. Historical revisions are retained for grading.
-            </p>
+          <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-xs font-mono text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 w-fit">
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+            <span>Submission Active</span>
           </div>
         </div>
 
-        {/* Security Alert */}
-        <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-700/80 text-xs text-slate-400 flex items-start gap-3">
-          <FileText className="w-4 h-4 text-cyan-400 shrink-0 mt-0.5" />
-          <div className="leading-relaxed">
-            <strong className="text-slate-200">Submission Requirements:</strong> Upload must be a genuine PDF document.
-            Files undergo binary signature validation (<code className="text-cyan-300 font-mono">%PDF-</code> header check).
-            PDFs are stored in private cloud storage and are accessible only to authorized instructors.
+        {/* 3 Core Highlights */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+          <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+            <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+              <span>AST & Semantic Check</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+              Include grammar rules, symbol tables, type checking validation, and syntax tree drawings in your report.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+            <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+              <ShieldCheck className="w-4 h-4 text-sky-500 shrink-0" />
+              <span>Binary Signature Check</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+              Both client and server inspect binary headers to confirm genuine <code className="font-mono text-sky-600 dark:text-sky-300">%PDF-</code> magic bytes.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-slate-50/80 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-1.5">
+            <div className="flex items-center gap-2 font-semibold text-slate-900 dark:text-slate-100">
+              <FileText className="w-4 h-4 text-violet-500 shrink-0" />
+              <span>Version History Retained</span>
+            </div>
+            <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+              If an instructor asks for revisions, earlier versions (<code className="font-mono text-violet-600 dark:text-violet-300">v1, v2</code>) are preserved in the private vault.
+            </p>
           </div>
         </div>
       </div>
 
       {/* Footer */}
-      <footer className="pt-6 pb-6 text-center text-xs text-slate-500 border-t border-slate-800/80 space-y-2">
-        <p>Department of Computer Science • CS421: Compiler Construction</p>
-        <p className="font-mono text-slate-600">
-          Powered by Supabase PostgreSQL Database & Encrypted Private Storage Vault
+      <footer className="pt-4 text-center text-xs text-slate-500 dark:text-slate-500 border-t border-slate-200 dark:border-white/10 space-y-1">
+        <p>CS421: Compiler Construction • Secure Academic Portal</p>
+        <p className="font-mono text-[11px] text-slate-400 dark:text-slate-600">
+          Powered by Supabase PostgreSQL Database & Private Storage Vault
         </p>
       </footer>
     </div>

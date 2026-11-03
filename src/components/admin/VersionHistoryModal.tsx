@@ -22,7 +22,6 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
   if (!submission) return null;
 
   const files = submission.files || [];
-  // Sort versions descending (latest first)
   const sortedFiles = [...files].sort((a, b) => b.version - a.version);
 
   return (
@@ -30,7 +29,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={
-        <div className="flex items-center gap-2 text-cyan-400">
+        <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400">
           <History className="w-5 h-5" />
           <span>Version History • {submission.student_name}</span>
         </div>
@@ -38,24 +37,24 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
       maxWidth="lg"
     >
       <div className="space-y-4">
-        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+        <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-700 dark:text-slate-300 flex items-center justify-between">
           <div>
             <span className="text-slate-400">Roll Number:</span>{' '}
-            <span className="font-mono text-white font-semibold">{submission.roll_number}</span>
+            <span className="font-mono text-slate-900 dark:text-white font-bold">{submission.roll_number}</span>
           </div>
           <div>
             <span className="text-slate-400">Reference:</span>{' '}
-            <span className="font-mono text-cyan-400 font-semibold">{submission.submission_ref}</span>
+            <span className="font-mono text-sky-600 dark:text-sky-400 font-bold">{submission.submission_ref}</span>
           </div>
           <div>
             <span className="text-slate-400">Total Versions:</span>{' '}
-            <span className="font-mono text-violet-300 font-semibold">{sortedFiles.length || 1}</span>
+            <span className="font-mono text-violet-600 dark:text-violet-400 font-bold">{sortedFiles.length || 1}</span>
           </div>
         </div>
 
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           {sortedFiles.length === 0 ? (
-            <div className="p-6 text-center text-xs text-slate-400 bg-slate-900/50 rounded-xl border border-slate-800">
+            <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 dark:bg-slate-900/50 rounded-2xl border border-slate-200 dark:border-slate-800">
               No archived files found for this submission record.
             </div>
           ) : (
@@ -64,45 +63,44 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
               return (
                 <div
                   key={file.id || index}
-                  className={`p-4 rounded-xl border transition-all ${
+                  className={`p-4 rounded-2xl border transition-all ${
                     isLatest
-                      ? 'bg-cyan-950/20 border-cyan-500/40'
-                      : 'bg-slate-900/60 border-slate-800'
+                      ? 'bg-sky-50/70 dark:bg-sky-950/20 border-sky-300 dark:border-sky-500/40 shadow-sm'
+                      : 'bg-slate-50/50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800'
                   }`}
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-cyan-400 shrink-0">
+                      <div className="w-10 h-10 rounded-2xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0 shadow-sm">
                         <FileText className="w-5 h-5" />
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <VersionBadge version={file.version} />
                           {isLatest && (
-                            <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-100 dark:bg-sky-500/20 text-sky-800 dark:text-sky-300 border border-sky-300 dark:border-sky-500/30">
                               Current / Latest
                             </span>
                           )}
-                          <span className="text-xs text-slate-400 font-mono">
+                          <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
                             {formatFileSize(file.file_size)}
                           </span>
                         </div>
-                        <p className="text-xs font-semibold text-slate-200 mt-1 truncate max-w-sm">
+                        <p className="text-xs font-bold text-slate-900 dark:text-slate-200 mt-1 truncate max-w-sm">
                           {file.file_name}
                         </p>
-                        <p className="text-[11px] text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
-                          <Calendar className="w-3 h-3 text-slate-500" />
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 mt-0.5 font-mono">
+                          <Calendar className="w-3 h-3 text-slate-400" />
                           Uploaded on: {formatDate(file.uploaded_at)}
                         </p>
                       </div>
                     </div>
 
-                    {/* Actions for this version */}
                     <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
                       <button
                         type="button"
                         onClick={() => onViewPdf(file.file_path, file.file_name)}
-                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition"
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-sky-700 dark:text-sky-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
                       >
                         <Eye className="w-3.5 h-3.5" />
                         <span>View</span>
@@ -111,7 +109,7 @@ export const VersionHistoryModal: React.FC<VersionHistoryModalProps> = ({
                       <button
                         type="button"
                         onClick={() => onDownloadPdf(file.file_path, file.file_name)}
-                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-white border border-slate-700 text-xs font-medium flex items-center gap-1.5 transition"
+                        className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-emerald-700 dark:text-emerald-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-sm"
                       >
                         <Download className="w-3.5 h-3.5" />
                         <span>Download</span>

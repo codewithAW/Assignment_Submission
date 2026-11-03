@@ -29,7 +29,6 @@ export const Modal: React.FC<ModalProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Lock body scroll when modal is open
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -62,24 +61,24 @@ export const Modal: React.FC<ModalProps> = ({
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            className="fixed inset-0 bg-black/80 backdrop-blur-md"
+            className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-md"
           />
 
-          {/* Modal Card */}
+          {/* Modal Card with Specular Rim & Glossy Depth */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className={`relative w-full ${widthClasses[maxWidth]} bg-[#0f172a]/95 border border-slate-700/60 rounded-2xl shadow-2xl shadow-cyan-950/40 p-6 text-slate-100 z-10 my-8`}
+            className={`relative w-full ${widthClasses[maxWidth]} bg-white/95 dark:bg-[#0f172a]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl p-6 sm:p-7 text-slate-900 dark:text-slate-100 z-10 my-8`}
           >
             {(title || showCloseButton) && (
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
-                <div className="font-semibold text-lg text-slate-100">{title}</div>
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-white/10">
+                <div className="font-bold text-base sm:text-lg text-slate-900 dark:text-white">{title}</div>
                 {showCloseButton && (
                   <button
                     onClick={onClose}
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-slate-800 transition-colors"
+                    className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                     aria-label="Close modal"
                   >
                     <X className="w-5 h-5" />
@@ -94,4 +93,3 @@ export const Modal: React.FC<ModalProps> = ({
     </AnimatePresence>
   );
 };
-

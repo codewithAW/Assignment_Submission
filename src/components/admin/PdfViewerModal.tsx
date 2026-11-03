@@ -22,7 +22,7 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={
-        <div className="flex items-center gap-2 text-cyan-400">
+        <div className="flex items-center gap-2 text-sky-600 dark:text-sky-400">
           <FileText className="w-5 h-5" />
           <span className="truncate max-w-sm sm:max-w-md">{fileName}</span>
         </div>
@@ -30,30 +30,28 @@ export const PdfViewerModal: React.FC<PdfViewerModalProps> = ({
       maxWidth="4xl"
     >
       <div className="space-y-3">
-        {/* Top helper controls */}
-        <div className="flex items-center justify-between text-xs text-slate-400 pb-2 border-b border-slate-800">
+        <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pb-2 border-b border-slate-200 dark:border-white/10">
           <span className="font-mono">Authorized 60s Signed Stream URL</span>
           <div className="flex items-center gap-3">
             <a
               href={pdfUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-cyan-400 hover:text-cyan-300 font-medium"
+              className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:underline font-semibold"
             >
-              Open in new window <ExternalLink className="w-3.5 h-3.5" />
+              Open in new tab <ExternalLink className="w-3.5 h-3.5" />
             </a>
             <a
               href={pdfUrl}
               download={fileName}
-              className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-medium"
+              className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 hover:underline font-semibold"
             >
               Download PDF <Download className="w-3.5 h-3.5" />
             </a>
           </div>
         </div>
 
-        {/* Embedded PDF iframe */}
-        <div className="w-full h-[65vh] bg-slate-950 rounded-xl overflow-hidden border border-slate-800 relative">
+        <div className="w-full h-[65vh] bg-slate-100 dark:bg-slate-950 rounded-2xl overflow-hidden border border-slate-200 dark:border-slate-800 relative shadow-inner">
           <iframe
             src={`${pdfUrl}#toolbar=1&view=FitH`}
             title={`Preview of ${fileName}`}

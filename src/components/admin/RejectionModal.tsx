@@ -41,7 +41,7 @@ export const RejectionModal: React.FC<RejectionModalProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={
-        <div className="flex items-center gap-2 text-rose-400">
+        <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
           <AlertTriangle className="w-5 h-5" />
           <span>Confirm Assignment Rejection</span>
         </div>
@@ -49,17 +49,17 @@ export const RejectionModal: React.FC<RejectionModalProps> = ({
       maxWidth="md"
     >
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="p-4 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-200 text-xs sm:text-sm leading-relaxed">
+        <div className="p-4 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-500/30 text-rose-900 dark:text-rose-200 text-xs sm:text-sm leading-relaxed">
           You are about to reject the assignment for{' '}
-          <strong className="text-white">{submission.student_name}</strong> (Roll No:{' '}
-          <span className="font-mono text-cyan-300">{submission.roll_number}</span>).
+          <strong className="font-bold">{submission.student_name}</strong> (Roll No:{' '}
+          <span className="font-mono text-sky-600 dark:text-sky-300 font-bold">{submission.roll_number}</span>).
           <br />
-          This will update the database status to <strong>rejected</strong>, notify the student via their submission checker, and enable them to upload a corrected version.
+          This will update the database status to <strong>rejected</strong>, notify the student on the verification page, and enable them to upload a corrected version.
         </div>
 
         <div>
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-300 mb-2">
-            Rejection Feedback / Instructor Notes <span className="text-rose-400">*</span>
+          <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
+            Rejection Feedback / Instructor Notes <span className="text-rose-500">*</span>
           </label>
           <textarea
             required
@@ -67,27 +67,27 @@ export const RejectionModal: React.FC<RejectionModalProps> = ({
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             placeholder="Specify missing sections, syntax bugs, or formatting errors..."
-            className="w-full p-3 rounded-xl bg-slate-900 border border-slate-700 focus:border-rose-400 focus:ring-1 focus:ring-rose-400 text-slate-100 placeholder:text-slate-500 text-xs sm:text-sm leading-relaxed transition"
+            className="glossy-input w-full p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed"
             disabled={isSubmitting}
           />
-          <p className="text-[11px] text-slate-400 mt-1">
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
             This reason will be visible when the student enters their roll number in the checker.
           </p>
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-white/10">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            className="px-4 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-bold transition"
           >
             Cancel
           </button>
           <button
             type="submit"
             disabled={isSubmitting}
-            className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-semibold text-xs transition shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
+            className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition shadow-md shadow-rose-600/30 flex items-center gap-1.5"
           >
             {isSubmitting ? (
               <span>Rejecting...</span>

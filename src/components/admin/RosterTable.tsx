@@ -8,7 +8,6 @@ interface RosterTableProps {
 }
 
 export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions }) => {
-  // Map roster items with current submission status
   const enrichedRoster = roster.map(student => {
     const sub = submissions.find(s => s.roll_number === student.roll_number);
     return {
@@ -22,25 +21,25 @@ export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions })
   const unsubmittedCount = enrichedRoster.filter(r => !r.has_submitted).length;
 
   return (
-    <div className="glass-card rounded-2xl border border-slate-700/60 overflow-hidden shadow-2xl">
-      <div className="p-4 sm:p-5 bg-slate-900/80 border-b border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+    <div className="glossy-card rounded-3xl overflow-hidden shadow-xl">
+      <div className="p-4 sm:p-5 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h3 className="font-bold text-white text-base flex items-center gap-2">
+          <h3 className="font-bold text-slate-900 dark:text-white text-base flex items-center gap-2">
             <span>CS421 Official Course Roster</span>
-            <span className="text-xs font-mono px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300">
+            <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
               {roster.length} Enrolled
             </span>
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Instructor list of registered students for Compiler Construction.
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Instructor roster for CS421: Compiler Construction.
           </p>
         </div>
 
         <div className="flex items-center gap-2 text-xs">
-          <span className="px-3 py-1 rounded-lg bg-rose-950/50 border border-rose-500/30 text-rose-300 font-mono">
+          <span className="px-3 py-1 rounded-xl bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 font-mono font-semibold">
             {unsubmittedCount} Not Yet Submitted
           </span>
-          <span className="px-3 py-1 rounded-lg bg-emerald-950/50 border border-emerald-500/30 text-emerald-300 font-mono">
+          <span className="px-3 py-1 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300 font-mono font-semibold">
             {roster.length - unsubmittedCount} Submitted
           </span>
         </div>
@@ -48,7 +47,7 @@ export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions })
 
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
-          <thead className="bg-slate-900/90 border-b border-slate-800 uppercase tracking-wider text-slate-400 font-semibold font-mono">
+          <thead className="bg-slate-50 dark:bg-slate-900/90 border-b border-slate-200 dark:border-white/10 uppercase tracking-wider text-slate-600 dark:text-slate-400 font-bold font-mono">
             <tr>
               <th className="py-3.5 px-5">Student Name</th>
               <th className="py-3.5 px-5">Roll Number</th>
@@ -56,16 +55,16 @@ export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions })
               <th className="py-3.5 px-5">Submission Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-800/80">
+          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {enrichedRoster.map((item) => (
-              <tr key={item.roll_number} className="hover:bg-slate-800/40 transition-colors">
-                <td className="py-3.5 px-5 font-semibold text-slate-100">
+              <tr key={item.roll_number} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
+                <td className="py-3.5 px-5 font-bold text-slate-900 dark:text-slate-100">
                   {item.student_name}
                 </td>
-                <td className="py-3.5 px-5 font-mono text-cyan-400">
+                <td className="py-3.5 px-5 font-mono text-sky-600 dark:text-sky-400 font-semibold">
                   {item.roll_number}
                 </td>
-                <td className="py-3.5 px-5 text-slate-400 font-mono">
+                <td className="py-3.5 px-5 text-slate-500 dark:text-slate-400 font-mono">
                   {item.email || '—'}
                 </td>
                 <td className="py-3.5 px-5">

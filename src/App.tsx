@@ -10,7 +10,6 @@ import { isSupabaseConfigured } from './services/supabase';
 import { Database } from 'lucide-react';
 
 export function App() {
-  // Current route state: '/', '/submit', '/check' (or '/submission'), '/admin'
   const [currentPath, setCurrentPath] = useState<string>(() => {
     const path = window.location.pathname;
     if (path.startsWith('/admin')) return '/admin';
@@ -23,7 +22,6 @@ export function App() {
   const [prefillName, setPrefillName] = useState('');
   const [isConfigOpen, setIsConfigOpen] = useState(false);
 
-  // Sync route state with browser URL & history
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname;
@@ -47,11 +45,11 @@ export function App() {
   };
 
   return (
-    <div className="relative min-h-screen bg-[#06080e] text-slate-100 overflow-x-hidden">
+    <div className="relative min-h-screen transition-colors duration-300 overflow-x-hidden text-slate-900 dark:text-slate-100 selection:bg-sky-500/30 selection:text-sky-600 dark:selection:text-sky-200">
       {/* 3D Instanced Three.js Particle Background */}
       <ParticleField />
 
-      {/* Global Navigation Bar */}
+      {/* Global Glossy Navigation Bar */}
       <Navbar currentPath={currentPath} onNavigate={(path) => navigateTo(path)} />
 
       {/* Page Routing */}
@@ -82,18 +80,18 @@ export function App() {
       <div className="fixed bottom-4 left-4 z-40">
         <button
           onClick={() => setIsConfigOpen(true)}
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 backdrop-blur-md shadow-xl text-xs font-mono transition group"
+          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/90 hover:bg-white dark:bg-slate-900/90 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700/80 backdrop-blur-md shadow-lg text-xs font-mono transition group"
           title="Click to view or edit Supabase configuration"
         >
           <span
             className={`w-2 h-2 rounded-full ${
-              isSupabaseConfigured ? 'bg-emerald-400 animate-pulse' : 'bg-cyan-400'
+              isSupabaseConfigured ? 'bg-emerald-500 animate-pulse' : 'bg-sky-500'
             }`}
           />
-          <span className="text-slate-300 group-hover:text-white">
+          <span className="font-semibold text-slate-800 dark:text-slate-200">
             {isSupabaseConfigured ? 'Supabase Live' : 'Local Test Mode'}
           </span>
-          <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-cyan-400 transition" />
+          <Database className="w-3.5 h-3.5 text-slate-400 group-hover:text-sky-500 transition" />
         </button>
       </div>
 

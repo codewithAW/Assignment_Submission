@@ -16,19 +16,19 @@ export const SubmitAssignmentPage: React.FC<SubmitAssignmentPageProps> = ({
   onNavigateToCheck,
 }) => {
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-8">
-      {/* Breadcrumb / Navigation */}
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 sm:py-12 space-y-6">
+      {/* Navigation Helpers (HCI Rule: Easy recovery & navigation) */}
       <div className="flex items-center justify-between">
         <button
           onClick={onNavigateHome}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-400 hover:text-white transition"
+          className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition"
         >
           <ArrowLeft className="w-4 h-4" /> Back to Home
         </button>
 
         <button
           onClick={onNavigateToCheck}
-          className="text-xs font-medium text-violet-400 hover:text-violet-300 underline transition"
+          className="text-xs font-semibold text-violet-600 dark:text-violet-400 hover:text-violet-700 dark:hover:text-violet-300 underline transition"
         >
           Already submitted? Check your status →
         </button>
@@ -41,20 +41,20 @@ export const SubmitAssignmentPage: React.FC<SubmitAssignmentPageProps> = ({
         onScrollToChecker={onNavigateToCheck}
       />
 
-      {/* Helpful Submission Guidelines */}
-      <div className="p-5 rounded-2xl glass-card border border-slate-800 text-xs text-slate-400 space-y-2">
-        <h4 className="font-semibold text-slate-200 flex items-center gap-2 text-sm">
-          <Shield className="w-4 h-4 text-cyan-400" /> Security & Resubmission Policy
+      {/* Security & Policy Note (HCI Rule: Reassurance without clutter) */}
+      <div className="p-5 rounded-3xl glossy-card text-xs space-y-2">
+        <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2 text-sm">
+          <Shield className="w-4 h-4 text-sky-500" /> Security & Versioning Guarantee
         </h4>
-        <ul className="list-disc pl-5 space-y-1.5 leading-relaxed">
+        <ul className="list-disc pl-5 space-y-1.5 text-slate-600 dark:text-slate-400 leading-relaxed">
           <li>
-            Only authentic PDF documents containing binary signature <code className="text-cyan-300 font-mono">%PDF-</code> are accepted.
+            Binary signature <code className="font-mono text-sky-600 dark:text-sky-300">%PDF-</code> is verified to protect the vault against disguised files.
           </li>
           <li>
-            Accidental duplicate submissions while your assignment is active are strictly blocked to protect student grades.
+            Duplicate submissions while an assignment is active are prevented.
           </li>
           <li>
-            If your instructor rejects your submission, you may return to this page to upload a corrected version (<code className="text-violet-300 font-mono">v2</code>, <code className="text-violet-300 font-mono">v3</code>). All versions remain archived in the database.
+            If rejected by an instructor, you can upload corrected revisions (<code className="font-mono text-violet-600 dark:text-violet-300">v2, v3</code>) while retaining your history.
           </li>
         </ul>
       </div>
