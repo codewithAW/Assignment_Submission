@@ -157,7 +157,48 @@ export const submissionService = {
 
     onProgress?.(35);
 
-    // 3. If connected to Live Supabase:
+    // 3. First priority: Server-Side API endpoint (/api/submit)
+    // Runs secure server-side validations, duplicate prevention, and writes directly to Supabase
+    try {
+      const formData = new FormData();
+      formData.append('student_name', studentName);
+      formData.append('roll_number', rollNumber);
+      if (payload.live_website_url?.trim()) {
+        formData.append('live_website_url', payload.live_website_url.trim());
+      }
+      formData.append('file', payload.file);
+
+      onProgress?.(55);
+
+      const apiRes = await fetch('/api/submit', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (apiRes.ok) {
+        const result = (await apiRes.json()) as SubmitAssignmentResponse;
+        onProgress?.(100);
+        return result;
+      }
+
+      // If server returned 409 (duplicate active submission) or 400 (validation error), throw it directly
+      if (apiRes.status === 409 || apiRes.status === 400) {
+        const errJson = await apiRes.json().catch(() => ({}));
+        throw new Error(errJson.error || 'Submission was rejected by the server.');
+      }
+    } catch (apiErr: any) {
+      if (
+        apiErr.message?.includes('already has an active submission') ||
+        apiErr.message?.includes('Duplicate submissions') ||
+        apiErr.message?.includes('Security rejection') ||
+        apiErr.message?.includes('Missing required fields')
+      ) {
+        throw apiErr;
+      }
+      console.warn('API /api/submit route not reachable, trying direct Supabase write:', apiErr?.message);
+    }
+
+    // 4. Second priority: Direct Supabase Client Write
     if (isSupabaseConfigured && supabase) {
       try {
         // First check existing submission in Supabase
@@ -179,7 +220,7 @@ export const submissionService = {
           );
         }
 
-        onProgress?.(50);
+        onProgress?.(70);
 
         const version = existingSub ? existingSub.current_version + 1 : 1;
         const submissionRef = existingSub?.submission_ref || generateSubmissionRef();
@@ -191,7 +232,6 @@ export const submissionService = {
         const sanitizedFileName = payload.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
         const storagePath = `${rollNumber}/v${version}_${Date.now()}_${sanitizedFileName}`;
 
-        onProgress?.(70);
         const { error: uploadErr } = await supabase.storage
           .from('assignments')
           .upload(storagePath, payload.file, {
@@ -218,6 +258,7 @@ export const submissionService = {
               rejected_at: null,
               rejected_by: null,
               current_version: version,
+              verification_code_hash: codeHash,
               updated_at: nowIso,
             })
             .eq('id', existingSub.id);
@@ -274,10 +315,12 @@ export const submissionService = {
           is_resubmission: version > 1,
         };
       } catch (err: any) {
-        console.warn('Supabase live write fallback:', err?.message);
-        if (err.message?.includes('already has an active submission')) {
-          throw err;
-        }
+        console.error('Supabase submission write error:', err);
+        // Do NOT silently fall back to local storage if Supabase is configured!
+        throw new Error(
+          `Supabase submission failed: ${err?.message || 'Database error'}. ` +
+          `Please check that Supabase storage & RLS policies are applied.`
+        );
       }
     }
 
