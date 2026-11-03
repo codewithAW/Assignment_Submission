@@ -2,7 +2,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Retrieve credentials from environment variables or localStorage override
 const envUrl = import.meta.env.VITE_SUPABASE_URL || '';
-const envKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const envKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 const storedUrl = typeof window !== 'undefined' ? localStorage.getItem('cc_supabase_url') : null;
 const storedKey = typeof window !== 'undefined' ? localStorage.getItem('cc_supabase_anon_key') : null;
