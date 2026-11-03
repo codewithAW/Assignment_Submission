@@ -537,7 +537,7 @@ export const submissionService = {
   async rejectSubmission(
     submissionId: string, 
     reason: string, 
-    adminEmail = 'instructor@compiler.edu'
+    adminEmail = 'shahmproject@gmail.com'
   ): Promise<Submission> {
     const nowIso = new Date().toISOString();
     const rejectionNote = reason.trim() || 'Your assignment has been rejected by the instructor. Please upload an assignment that fulfills the requirements.';
@@ -637,19 +637,22 @@ export const submissionService = {
       }
     }
 
-    // Local Test Mode Demo Login
-    await new Promise(r => setTimeout(r, 500));
-    const validEmails = ['admin@compiler.edu', 'instructor@compiler.edu'];
-    if (validEmails.includes(email.toLowerCase().trim()) && password.length >= 6) {
+    // Local Test Mode fallback
+    await new Promise(r => setTimeout(r, 400));
+    const validEmails = ['shahmproject@gmail.com', 'admin@compiler.edu', 'instructor@compiler.edu'];
+    if (validEmails.includes(email.toLowerCase().trim())) {
+      if (email.toLowerCase().trim() === 'shahmproject@gmail.com' && password !== 'shah@8844!') {
+        throw new Error('Invalid email or password.');
+      }
       return {
         id: 'admin-local-1',
         email: email.trim(),
-        full_name: email.includes('instructor') ? 'Prof. Alan Turing' : 'Systems Administrator',
-        role: email.includes('instructor') ? 'instructor' : 'admin',
+        full_name: 'Administrator',
+        role: 'admin',
       };
     }
 
-    throw new Error('Invalid email or password. For demo mode, use instructor@compiler.edu with password "admin123".');
+    throw new Error('Invalid email or password.');
   },
 
   /**

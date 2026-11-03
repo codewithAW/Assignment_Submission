@@ -33,11 +33,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
     }
   };
 
-  const handleQuickDemoFill = () => {
-    setEmail('instructor@compiler.edu');
-    setPassword('admin123');
-  };
-
   return (
     <div className="min-h-[80vh] flex items-center justify-center px-4 py-8">
       <motion.div
@@ -75,7 +70,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-2">
-              Instructor Email
+              Administrator Email
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -84,7 +79,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
               <input
                 type="email"
                 required
-                placeholder="instructor@compiler.edu"
+                placeholder="shahmproject@gmail.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-sm"
@@ -138,20 +133,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             )}
           </button>
         </form>
-
-        {/* Demo Helper Button */}
-        <div className="mt-6 pt-5 border-t border-slate-200 dark:border-white/10 text-center">
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
-            Instructor evaluation mode:
-          </p>
-          <button
-            type="button"
-            onClick={handleQuickDemoFill}
-            className="w-full py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-900 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs font-mono text-sky-600 dark:text-sky-400 transition"
-          >
-            Fill Demo Credentials (instructor@compiler.edu)
-          </button>
-        </div>
       </motion.div>
     </div>
   );

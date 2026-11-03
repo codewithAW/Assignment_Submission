@@ -31,9 +31,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToStudentPortal 
         if (session?.user) {
           setCurrentUser({
             id: session.user.id,
-            email: session.user.email || 'instructor@compiler.edu',
-            full_name: session.user.user_metadata?.full_name || 'Instructor',
-            role: 'instructor',
+            email: session.user.email || 'shahmproject@gmail.com',
+            full_name: session.user.user_metadata?.full_name || 'Administrator',
+            role: 'admin',
           });
         }
       }

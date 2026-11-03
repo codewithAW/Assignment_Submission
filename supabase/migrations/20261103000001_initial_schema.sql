@@ -73,6 +73,7 @@ ON CONFLICT (roll_number) DO NOTHING;
 -- Seed default admin user
 INSERT INTO public.admin_users (email, full_name, role)
 VALUES 
+    ('shahmproject@gmail.com', 'Administrator', 'admin'),
     ('instructor@compiler.edu', 'Prof. Alan Turing', 'instructor'),
     ('admin@compiler.edu', 'Systems Administrator', 'admin')
 ON CONFLICT (email) DO NOTHING;
