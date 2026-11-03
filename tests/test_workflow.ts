@@ -34,7 +34,7 @@ async function runTests() {
   const ref = generateSubmissionRef();
   const code = generateVerificationCode();
   console.log(`Generated Ref: ${ref}, Verification Code: ${code}`);
-  if (!ref.startsWith('CC-') || !code.startsWith('VFY-')) {
+  if (!ref.startsWith('CC-') || code.length !== 4) {
     throw new Error('Invalid code formats');
   }
   console.log('✔ Reference code generators passed.\n');

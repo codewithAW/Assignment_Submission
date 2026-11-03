@@ -13,16 +13,13 @@ export function generateSubmissionRef(): string {
 }
 
 /**
- * Generates a verification code for the student to check their status securely
- * Example: "VFY-8K2N9P"
+ * Generates an easy-to-remember 4-digit verification code
+ * Example: "4829"
  */
 export function generateVerificationCode(): string {
-  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return `VFY-${code}`;
+  // Simple, memorable 4-digit code between 1000 and 9999
+  const pin = Math.floor(1000 + Math.random() * 9000);
+  return pin.toString();
 }
 
 /**

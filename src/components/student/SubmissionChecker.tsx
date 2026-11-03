@@ -97,9 +97,9 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
-                  Verification Code
+                  Verification Code (4-Digit) <span className="text-violet-500">*</span>
                 </label>
-                <span className="text-[11px] text-slate-500 dark:text-slate-400">From submission receipt</span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">4-digit code from receipt</span>
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -107,10 +107,11 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
                 </div>
                 <input
                   type="text"
-                  placeholder="e.g. VFY-8K2N9P"
+                  maxLength={6}
+                  placeholder="e.g. 4829"
                   value={verificationCode}
-                  onChange={(e) => setVerificationCode(e.target.value.toUpperCase())}
-                  className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl font-mono text-sm"
+                  onChange={(e) => setVerificationCode(e.target.value.trim())}
+                  className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl font-mono text-sm tracking-wider"
                   disabled={isLoading}
                 />
               </div>

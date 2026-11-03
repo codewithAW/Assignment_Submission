@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Copy, Check, ShieldCheck, Calendar, Hash, User, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Copy, Check, Calendar, Hash, User, ExternalLink, AlertTriangle, KeyRound } from 'lucide-react';
 import type { SubmitAssignmentResponse } from '../../types';
 import { formatDate } from '../../utils/date';
 
@@ -55,7 +55,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
         </p>
       </div>
 
-      {/* Primary Reference & Verification Details */}
+      {/* Primary Reference & Easy Verification Code */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Submission Ref */}
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 relative shadow-sm">
@@ -76,31 +76,41 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
           </div>
         </div>
 
-        {/* Private Verification Code */}
-        <div className="p-4 rounded-2xl bg-violet-50/70 dark:bg-slate-900 border border-violet-200 dark:border-violet-500/40 relative shadow-sm">
-          <span className="text-[11px] font-bold text-violet-700 dark:text-violet-300 uppercase tracking-wider flex items-center gap-1.5 mb-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-            Verification Code
+        {/* Easy 4-Digit Verification Code */}
+        <div className="p-4 rounded-2xl bg-rose-50/80 dark:bg-rose-950/40 border-2 border-rose-400 dark:border-rose-500/60 relative shadow-md">
+          <span className="text-[11px] font-extrabold text-rose-700 dark:text-rose-300 uppercase tracking-wider flex items-center gap-1.5 mb-1">
+            <KeyRound className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+            Your Verification Code
           </span>
           <div className="flex items-center justify-between">
-            <span className="font-mono text-base sm:text-lg font-bold text-violet-700 dark:text-violet-300 tracking-wider">
+            <span className="font-mono text-2xl font-black text-rose-600 dark:text-rose-400 tracking-widest">
               {data.verification_code}
             </span>
             <button
               onClick={() => copyToClipboard(data.verification_code || '', 'code')}
-              className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-white rounded-lg transition"
-              title="Copy Verification Code"
+              className="px-2.5 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 rounded-lg shadow-sm transition flex items-center gap-1"
+              title="Copy 4-Digit Verification Code"
             >
-              {copiedCode ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              {copiedCode ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>{copiedCode ? 'Copied!' : 'Copy Code'}</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Notice on Verification Code */}
-      <div className="p-3.5 rounded-2xl bg-violet-50 dark:bg-violet-950/30 border border-violet-200 dark:border-violet-500/20 text-xs text-violet-800 dark:text-violet-200/90 leading-relaxed">
-        <strong className="text-violet-900 dark:text-violet-300 font-bold block mb-0.5">Important Security Notice:</strong>
-        Please copy your <strong>Private Verification Code</strong>. You will need your Roll Number and this code to check your grading status or resubmit if requested.
+      {/* Prominent Red Warning Banner */}
+      <div className="p-4 sm:p-5 rounded-2xl bg-rose-50 dark:bg-rose-950/80 border-2 border-rose-500/80 shadow-lg shadow-rose-500/10 text-rose-950 dark:text-rose-100 space-y-2">
+        <div className="flex items-center gap-2 font-black text-rose-600 dark:text-rose-400 text-sm tracking-wide uppercase">
+          <AlertTriangle className="w-5 h-5 shrink-0 animate-bounce" />
+          <span>Important Warning — Save This Code Now!</span>
+        </div>
+        <p className="text-xs sm:text-sm font-semibold leading-relaxed text-rose-900 dark:text-rose-200">
+          You <strong className="underline decoration-rose-500 decoration-2">MUST save your 4-digit verification code ({data.verification_code})</strong> with you. 
+          You will need this code along with your roll number to view your assignment submission status, check instructor grading comments, or submit a corrected version if required.
+        </p>
+        <p className="text-[11px] text-rose-700 dark:text-rose-300 font-medium pt-0.5">
+          Take a screenshot or write it down. Without this code, you will not be able to access your submission status.
+        </p>
       </div>
 
       {/* Metadata list */}
@@ -140,7 +150,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
         )}
       </div>
 
-      {/* Action Buttons (Fitts's Law) */}
+      {/* Action Buttons */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
         <button
           type="button"
