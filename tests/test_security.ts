@@ -9,8 +9,10 @@ import {
   sanitizeFileName,
   sanitizeHttpUrl,
   sanitizePdfUrl,
+  sanitizeStorageBucket,
   sanitizeText,
   subjectNameToTableName,
+  tableNameToStorageBucket,
 } from '../src/utils/security.ts';
 import { isValidRollNumber } from '../src/utils/rollNumber.ts';
 
@@ -82,8 +84,15 @@ for (const subj of sqliSubjects) {
   assert.match(tbl, /^[a-z][a-z0-9_]{0,47}$/);
   assert.notEqual(tbl, 'submissions');
   assert.notEqual(tbl, 'admin_users');
+
+  const bucket = tableNameToStorageBucket(tbl);
+  assert.match(bucket, /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/);
+  assert.ok(!bucket.includes('_'), 'Storage bucket must never contain underscores');
+  assert.equal(sanitizeStorageBucket(bucket), bucket);
 }
-console.log('[PASS] Roll number validator & SQL table slugger neutralize SQL injection inputs');
+assert.equal(sanitizeStorageBucket('bad_bucket!'), null);
+assert.equal(tableNameToStorageBucket('assignments'), 'subj-assignments');
+console.log('[PASS] Roll number validator, SQL table slugger & storage bucket slugger neutralize SQL injection inputs');
 
 // 4. Path traversal & Bidi / Control char sanitization
 const cleanFile = sanitizeFileName('../../../../windows/system32/evil\x00\u202E..html.pdf');

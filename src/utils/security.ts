@@ -66,6 +66,39 @@ export function subjectNameToTableName(subjectName: string): string {
 }
 
 /**
+ * Derives a valid Supabase Storage bucket name from a subject table identifier.
+ * Supabase Storage buckets allow lowercase letters, digits, and hyphens (3..63 chars; no underscores).
+ */
+export function tableNameToStorageBucket(tableName: string): string {
+  let slug = sanitizeText(tableName, 63)
+    .toLowerCase()
+    .replace(/_/g, '-')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  if (!slug) return 'assignments';
+  if (slug.length < 3) {
+    slug = `subj-${slug}`;
+  }
+  slug = slug.slice(0, 63).replace(/-+$/g, '');
+  if (slug === 'assignments') {
+    slug = 'subj-assignments';
+  }
+  return slug;
+}
+
+/**
+ * Validates and normalizes a Supabase Storage bucket name.
+ */
+export function sanitizeStorageBucket(bucketName?: string | null): string | null {
+  const clean = sanitizeText(bucketName, 63).toLowerCase();
+  if (!clean || !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(clean)) {
+    return null;
+  }
+  return clean;
+}
+
+/**
  * Generates an easy-to-remember 4-digit verification code (1000–9999) via CSPRNG
  */
 export function generateVerificationCode(): string {

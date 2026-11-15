@@ -1,20 +1,18 @@
 -- ============================================================================
--- ASSIGNMENT SUBMISSION PORTAL — COMPREHENSIVE DATABASE & RLS SECURITY HARDENING
--- Fixes:
---   1. Closes anonymous SELECT/PII/hash leak on submissions & submission_files
---   2. Closes anonymous direct table INSERT/UPDATE (routes writes through RPCs)
---   3. Removes `OR p_code_hash = ''` authentication bypass in status check RPC
---   4. Adds server-side brute-force lockout (5 attempts -> 15m lock) for 4-digit codes
---   5. Enforces strict server-side input, URL scheme (http/https), roll & path validation
---   6. Pins `SET search_path = public, pg_temp` & revokes `PUBLIC` function defaults
---   7. Replaces deprecated `auth.role()` and rejects anonymous auth sessions
---   8. Tightens `storage.objects` (`assignments` bucket) to PDFs without path traversal
+-- ASSIGNMENT SUBMISSION PORTAL — COMPLETE MULTI-SUBJECT, STORAGE & TABLE SYNC
+-- Safe & Idempotent:
+--   1. Creates & hardens verification_attempts, subject_assignments, and all RPCs
+--   2. Renames legacy public.submissions -> public.compiler_construction so table
+--      names always match subject names (and preserves all existing rows & files)
+--   3. Creates a dedicated private Supabase Storage bucket per subject assignment
+--      (preserving legacy 'assignments' bucket reads for older uploads)
+--   4. Renames dynamic subject tables automatically when an assignment is renamed
+--   5. Enforces strict RLS across all subject tables & Storage buckets/objects
 --
--- Safe & Idempotent: Preserves ALL existing student rows and files.
 -- Run once in Supabase Dashboard -> SQL Editor -> New Query -> Run.
 -- ============================================================================
 
--- 1. Pin internal text sanitization helper (no PUBLIC execute)
+-- 1. Internal sanitization & naming helpers (no PUBLIC execute)
 CREATE OR REPLACE FUNCTION public._sanitize_portal_text(p_input TEXT, p_max_len INT DEFAULT 200)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -25,9 +23,7 @@ DECLARE
     v_clean TEXT;
 BEGIN
     v_clean := COALESCE(p_input, '');
-    -- Strip Unicode bidirectional overrides & directional marks (Trojan Source / spoofing protection)
     v_clean := translate(v_clean, U&'\200E\200F\202A\202B\202C\202D\202E\2066\2067\2068\2069', '');
-    -- Strip ASCII control characters safely
     v_clean := regexp_replace(v_clean, '[[:cntrl:]]+', ' ', 'g');
     v_clean := trim(regexp_replace(v_clean, '\s+', ' ', 'g'));
     IF p_max_len > 0 AND char_length(v_clean) > p_max_len THEN
@@ -39,7 +35,86 @@ $$;
 
 REVOKE ALL ON FUNCTION public._sanitize_portal_text(TEXT, INT) FROM PUBLIC, anon, authenticated;
 
--- 2. Harden is_admin(): modern auth.jwt(), pinned search_path, rejects anonymous JWTs
+CREATE OR REPLACE FUNCTION public._subject_name_to_table(p_subject_name TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_clean TEXT;
+    v_slug TEXT;
+    v_table TEXT;
+BEGIN
+    v_clean := public._sanitize_portal_text(p_subject_name, 100);
+    v_slug := regexp_replace(lower(v_clean), '[^a-z0-9]+', '_', 'g');
+    v_slug := trim(both '_' FROM v_slug);
+
+    IF v_slug = '' THEN
+        RETURN '';
+    END IF;
+
+    IF left(v_slug, 1) ~ '[0-9]' THEN
+        v_slug := 'subj_' || v_slug;
+    END IF;
+
+    v_table := rtrim(left(v_slug, 48), '_');
+
+    IF v_table IN (
+        'submissions',
+        'submission_files',
+        'admin_users',
+        'student_roster',
+        'subject_assignments',
+        'verification_attempts',
+        'subjects',
+        'assignments',
+        'users',
+        'profiles'
+    ) THEN
+        v_table := rtrim(left('subj_' || v_table, 48), '_');
+    END IF;
+
+    RETURN v_table;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._subject_name_to_table(TEXT) FROM PUBLIC, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public._subject_storage_bucket_name(p_table_name TEXT)
+RETURNS TEXT
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_bucket TEXT;
+BEGIN
+    v_bucket := replace(lower(trim(COALESCE(p_table_name, ''))), '_', '-');
+    v_bucket := regexp_replace(v_bucket, '[^a-z0-9-]+', '-', 'g');
+    v_bucket := trim(both '-' FROM v_bucket);
+
+    IF v_bucket = '' THEN
+        RETURN 'assignments';
+    END IF;
+
+    IF char_length(v_bucket) < 3 THEN
+        v_bucket := 'subj-' || v_bucket;
+    END IF;
+
+    v_bucket := rtrim(left(v_bucket, 63), '-');
+
+    IF v_bucket = 'assignments' THEN
+        v_bucket := 'subj-assignments';
+    END IF;
+
+    RETURN v_bucket;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public._subject_storage_bucket_name(TEXT) FROM PUBLIC, anon, authenticated;
+
+-- 2. Hardened is_admin() & verify_admin_access()
 CREATE OR REPLACE FUNCTION public.is_admin()
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -49,7 +124,6 @@ AS $$
 DECLARE
     v_jwt JSONB;
     v_email TEXT;
-    v_is_anon BOOLEAN;
 BEGIN
     v_jwt := (SELECT auth.jwt());
     IF v_jwt IS NULL THEN
@@ -60,9 +134,7 @@ BEGIN
         RETURN true;
     END IF;
 
-    -- Guard against anonymous Supabase Auth sessions carrying `authenticated` role
-    v_is_anon := COALESCE((v_jwt ->> 'is_anonymous')::boolean, false);
-    IF v_is_anon THEN
+    IF COALESCE((v_jwt ->> 'is_anonymous')::boolean, false) THEN
         RETURN false;
     END IF;
 
@@ -86,7 +158,6 @@ $$;
 REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
 
--- 3. Authenticated-only admin verification RPC for frontend session validation
 CREATE OR REPLACE FUNCTION public.verify_admin_access()
 RETURNS JSON
 LANGUAGE plpgsql
@@ -125,7 +196,7 @@ $$;
 REVOKE ALL ON FUNCTION public.verify_admin_access() FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.verify_admin_access() TO authenticated;
 
--- 4. Brute-force protection table for 4-digit verification code checks
+-- 3. Brute-force protection table & Subject registry metadata
 CREATE TABLE IF NOT EXISTS public.verification_attempts (
     table_name TEXT NOT NULL,
     roll_number TEXT NOT NULL,
@@ -135,18 +206,216 @@ CREATE TABLE IF NOT EXISTS public.verification_attempts (
     PRIMARY KEY (table_name, roll_number)
 );
 
-ALTER TABLE public.verification_attempts ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.verification_attempts FROM PUBLIC, anon, authenticated;
+CREATE TABLE IF NOT EXISTS public.subject_assignments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    subject_name TEXT NOT NULL UNIQUE,
+    table_name TEXT NOT NULL UNIQUE,
+    storage_bucket TEXT NOT NULL DEFAULT 'assignments',
+    deadline TIMESTAMPTZ NOT NULL,
+    created_by TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+    closed_at TIMESTAMPTZ NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now()),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
 
--- Ensure subject_assignments tracks close timestamp for 24h auto-hide countdown
-ALTER TABLE IF EXISTS public.subject_assignments
-    ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL;
+ALTER TABLE public.subject_assignments
+    ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL,
+    ADD COLUMN IF NOT EXISTS storage_bucket TEXT NOT NULL DEFAULT 'assignments';
 
+CREATE INDEX IF NOT EXISTS idx_subject_assignments_table_name
+    ON public.subject_assignments (table_name);
+CREATE INDEX IF NOT EXISTS idx_subject_assignments_deadline
+    ON public.subject_assignments (deadline);
 CREATE INDEX IF NOT EXISTS idx_subject_assignments_closed_at
     ON public.subject_assignments (closed_at)
     WHERE closed_at IS NOT NULL;
 
--- 5. Dynamically clean ALL overly permissive policies on portal tables & lock down grants
+-- 4. Migrate legacy public.submissions -> subject-matched table & sync Storage buckets
+DO $$
+DECLARE
+    v_legacy_name TEXT;
+    v_target_table TEXT;
+    v_subj RECORD;
+    v_bucket TEXT;
+BEGIN
+    IF to_regclass('public.submissions') IS NOT NULL THEN
+        SELECT subject_name
+        INTO v_legacy_name
+        FROM public.subject_assignments
+        WHERE table_name = 'submissions'
+        LIMIT 1;
+
+        v_target_table := public._subject_name_to_table(COALESCE(v_legacy_name, 'Compiler Construction'));
+        IF v_target_table = '' THEN
+            v_target_table := 'compiler_construction';
+        END IF;
+
+        IF to_regclass(format('public.%I', v_target_table)) IS NULL THEN
+            EXECUTE format('ALTER TABLE public.submissions RENAME TO %I', v_target_table);
+        END IF;
+
+        IF to_regclass(format('public.%I', v_target_table)) IS NOT NULL THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I
+                    ADD COLUMN IF NOT EXISTS file_path TEXT,
+                    ADD COLUMN IF NOT EXISTS file_name TEXT,
+                    ADD COLUMN IF NOT EXISTS file_size BIGINT,
+                    ADD COLUMN IF NOT EXISTS files JSONB NOT NULL DEFAULT ''[]''::jsonb',
+                v_target_table
+            );
+
+            IF to_regclass('public.submission_files') IS NOT NULL THEN
+                EXECUTE format(
+                    'UPDATE public.%I t
+                     SET
+                        files = COALESCE(
+                            (
+                                SELECT jsonb_agg(to_jsonb(f) ORDER BY f.version ASC)
+                                FROM public.submission_files f
+                                WHERE f.submission_id = t.id
+                            ),
+                            ''[]''::jsonb
+                        ),
+                        file_path = COALESCE(
+                            t.file_path,
+                            (
+                                SELECT f.file_path
+                                FROM public.submission_files f
+                                WHERE f.submission_id = t.id
+                                ORDER BY f.version DESC
+                                LIMIT 1
+                            )
+                        ),
+                        file_name = COALESCE(
+                            t.file_name,
+                            (
+                                SELECT f.file_name
+                                FROM public.submission_files f
+                                WHERE f.submission_id = t.id
+                                ORDER BY f.version DESC
+                                LIMIT 1
+                            )
+                        ),
+                        file_size = COALESCE(
+                            t.file_size,
+                            (
+                                SELECT f.file_size
+                                FROM public.submission_files f
+                                WHERE f.submission_id = t.id
+                                ORDER BY f.version DESC
+                                LIMIT 1
+                            )
+                        )
+                     WHERE t.files = ''[]''::jsonb OR t.file_path IS NULL',
+                    v_target_table
+                );
+            END IF;
+
+            UPDATE public.subject_assignments
+            SET table_name = v_target_table,
+                storage_bucket = public._subject_storage_bucket_name(v_target_table),
+                updated_at = timezone('utc'::text, now())
+            WHERE table_name = 'submissions'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM public.subject_assignments existing
+                  WHERE existing.table_name = v_target_table
+              );
+
+            INSERT INTO public.subject_assignments (subject_name, table_name, storage_bucket, deadline, created_by, is_active)
+            VALUES (
+                COALESCE(v_legacy_name, 'Compiler Construction'),
+                v_target_table,
+                public._subject_storage_bucket_name(v_target_table),
+                TIMESTAMPTZ '2026-12-31 23:59:00+00',
+                'shahmproject@gmail.com',
+                true
+            )
+            ON CONFLICT DO NOTHING;
+
+            IF to_regclass('public.verification_attempts') IS NOT NULL THEN
+                UPDATE public.verification_attempts
+                SET table_name = v_target_table
+                WHERE table_name = 'submissions';
+            END IF;
+        END IF;
+    ELSIF to_regclass('public.compiler_construction') IS NOT NULL THEN
+        UPDATE public.subject_assignments
+        SET table_name = 'compiler_construction',
+            storage_bucket = 'compiler-construction',
+            updated_at = timezone('utc'::text, now())
+        WHERE table_name = 'submissions'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM public.subject_assignments existing
+              WHERE existing.table_name = 'compiler_construction'
+          );
+
+        INSERT INTO public.subject_assignments (subject_name, table_name, storage_bucket, deadline, created_by, is_active)
+        VALUES (
+            'Compiler Construction',
+            'compiler_construction',
+            'compiler-construction',
+            TIMESTAMPTZ '2026-12-31 23:59:00+00',
+            'shahmproject@gmail.com',
+            true
+        )
+        ON CONFLICT DO NOTHING;
+    END IF;
+
+    -- Ensure legacy 'assignments' bucket stays private & 15MB PDF-restricted
+    BEGIN
+        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+        VALUES (
+            'assignments',
+            'assignments',
+            false,
+            15728640,
+            ARRAY['application/pdf', 'application/x-pdf']
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            public = false,
+            file_size_limit = 15728640,
+            allowed_mime_types = ARRAY['application/pdf', 'application/x-pdf'];
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
+    END;
+
+    -- Create dedicated private storage bucket per active subject assignment
+    FOR v_subj IN
+        SELECT id, table_name
+        FROM public.subject_assignments
+        WHERE table_name ~ '^[a-z][a-z0-9_]{0,47}$'
+    LOOP
+        v_bucket := public._subject_storage_bucket_name(v_subj.table_name);
+        BEGIN
+            INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+            VALUES (
+                v_bucket,
+                v_bucket,
+                false,
+                15728640,
+                ARRAY['application/pdf', 'application/x-pdf']
+            )
+            ON CONFLICT (id) DO UPDATE SET
+                public = false,
+                file_size_limit = 15728640,
+                allowed_mime_types = ARRAY['application/pdf', 'application/x-pdf'];
+
+            UPDATE public.subject_assignments
+            SET storage_bucket = v_bucket
+            WHERE id = v_subj.id;
+        EXCEPTION WHEN OTHERS THEN
+            UPDATE public.subject_assignments
+            SET storage_bucket = 'assignments'
+            WHERE id = v_subj.id AND (storage_bucket IS NULL OR storage_bucket = '');
+        END;
+    END LOOP;
+END;
+$$;
+
+-- 5. Lock down RLS across all core & dynamic subject tables + Storage buckets/objects
 DO $$
 DECLARE
     v_pol RECORD;
@@ -160,7 +429,6 @@ DECLARE
         'verification_attempts'
     ];
 BEGIN
-    -- Include every dynamically registered subject table in cleanup
     IF to_regclass('public.subject_assignments') IS NOT NULL THEN
         FOR v_tbl IN
             SELECT DISTINCT table_name
@@ -173,7 +441,6 @@ BEGIN
         END LOOP;
     END IF;
 
-    -- Drop EVERY pre-existing policy on all protected portal tables
     FOR v_pol IN
         SELECT tablename, policyname
         FROM pg_catalog.pg_policies
@@ -183,7 +450,6 @@ BEGIN
         EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', v_pol.policyname, v_pol.tablename);
     END LOOP;
 
-    -- Revoke PUBLIC and anon table privileges across sensitive student/admin tables
     FOREACH v_tbl IN ARRAY v_target_tables
     LOOP
         IF to_regclass(format('public.%I', v_tbl)) IS NOT NULL THEN
@@ -196,10 +462,8 @@ BEGIN
             ELSIF v_tbl = 'admin_users' THEN
                 EXECUTE 'GRANT SELECT ON TABLE public.admin_users TO authenticated';
             ELSIF v_tbl = 'verification_attempts' THEN
-                -- Internal table accessed via SECURITY DEFINER RPCs; admins can inspect if needed
                 NULL;
             ELSE
-                -- submissions, submission_files, student_roster, and dynamic subject tables
                 EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO authenticated', v_tbl);
                 EXECUTE format(
                     'CREATE POLICY "Admins manage %s" ON public.%I FOR ALL TO authenticated USING ((SELECT public.is_admin())) WITH CHECK ((SELECT public.is_admin()))',
@@ -212,7 +476,6 @@ BEGIN
 END;
 $$;
 
--- Policies for verification_attempts, admin_users, and subject_assignments
 CREATE POLICY "Admins view verification attempts"
     ON public.verification_attempts
     FOR SELECT
@@ -250,7 +513,99 @@ CREATE POLICY "Admins delete subject assignments"
     TO authenticated
     USING ((SELECT public.is_admin()));
 
--- 6. Harden internal table resolver
+-- Storage policies (supports dedicated per-subject private buckets + legacy 'assignments' bucket)
+DO $$
+DECLARE
+    v_pol RECORD;
+BEGIN
+    BEGIN
+        DROP POLICY IF EXISTS "Admins manage subject buckets" ON storage.buckets;
+        CREATE POLICY "Admins manage subject buckets"
+            ON storage.buckets
+            FOR ALL
+            TO authenticated
+            USING ((SELECT public.is_admin()))
+            WITH CHECK ((SELECT public.is_admin()));
+    EXCEPTION WHEN OTHERS THEN
+        NULL;
+    END;
+
+    FOR v_pol IN
+        SELECT policyname
+        FROM pg_catalog.pg_policies
+        WHERE schemaname = 'storage'
+          AND tablename = 'objects'
+          AND (
+              coalesce(qual, '') ~* 'assignments|subject_assignments'
+              OR coalesce(with_check, '') ~* 'assignments|subject_assignments'
+              OR policyname IN (
+                  'Allow student PDF uploads',
+                  'Admins can view and download assignment files',
+                  'Service role full storage access',
+                  'Students upload assignment PDFs',
+                  'Admins read assignment PDFs',
+                  'Admins delete assignment PDFs'
+              )
+          )
+    LOOP
+        EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', v_pol.policyname);
+    END LOOP;
+END;
+$$;
+
+CREATE POLICY "Students upload assignment PDFs"
+    ON storage.objects
+    FOR INSERT
+    TO anon, authenticated
+    WITH CHECK (
+        (
+            bucket_id = 'assignments'
+            OR EXISTS (
+                SELECT 1
+                FROM public.subject_assignments sa
+                WHERE sa.storage_bucket = storage.objects.bucket_id
+                  AND sa.is_active = true
+                  AND sa.closed_at IS NULL
+            )
+        )
+        AND name ~* '^[a-z0-9][a-z0-9._/-]*\.pdf$'
+        AND position('..' in name) = 0
+        AND position('//' in name) = 0
+    );
+
+CREATE POLICY "Admins read assignment PDFs"
+    ON storage.objects
+    FOR SELECT
+    TO authenticated
+    USING (
+        (
+            bucket_id = 'assignments'
+            OR EXISTS (
+                SELECT 1
+                FROM public.subject_assignments sa
+                WHERE sa.storage_bucket = storage.objects.bucket_id
+            )
+        )
+        AND (SELECT public.is_admin())
+    );
+
+CREATE POLICY "Admins delete assignment PDFs"
+    ON storage.objects
+    FOR DELETE
+    TO authenticated
+    USING (
+        (
+            bucket_id = 'assignments'
+            OR EXISTS (
+                SELECT 1
+                FROM public.subject_assignments sa
+                WHERE sa.storage_bucket = storage.objects.bucket_id
+            )
+        )
+        AND (SELECT public.is_admin())
+    );
+
+-- 6. Internal allowlist resolver (with legacy 'submissions' alias if migrated)
 CREATE OR REPLACE FUNCTION public._resolve_subject_table(p_table_name TEXT)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -261,8 +616,18 @@ DECLARE
     v_table_name TEXT;
 BEGIN
     v_table_name := trim(COALESCE(p_table_name, ''));
-    IF v_table_name = '' THEN
-        v_table_name := 'submissions';
+    IF v_table_name = '' OR (
+        v_table_name = 'submissions'
+        AND to_regclass('public.submissions') IS NULL
+        AND to_regclass('public.compiler_construction') IS NOT NULL
+        AND EXISTS (
+            SELECT 1
+            FROM public.subject_assignments sa
+            WHERE sa.table_name = 'compiler_construction'
+              AND sa.is_active = true
+        )
+    ) THEN
+        v_table_name := 'compiler_construction';
     END IF;
 
     IF v_table_name !~ '^[a-z][a-z0-9_]{0,47}$' THEN
@@ -283,7 +648,7 @@ BEGIN
     END IF;
 
     IF to_regclass(format('public.%I', v_table_name)) IS NULL THEN
-        RAISE EXCEPTION 'Subject submission table does not exist.'
+        RAISE EXCEPTION 'Subject submission table "%" does not exist.', v_table_name
             USING ERRCODE = '42P01';
     END IF;
 
@@ -293,7 +658,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public._resolve_subject_table(TEXT) FROM PUBLIC, anon, authenticated;
 
--- 7. Harden admin RPC: create_subject_assignment() without granting direct anon write access
+-- 7. Admin RPC: Create subject assignment + dedicated table + dedicated private bucket
 CREATE OR REPLACE FUNCTION public.create_subject_assignment(
     p_subject_name TEXT,
     p_deadline TIMESTAMPTZ
@@ -305,8 +670,8 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_subject_name TEXT;
-    v_slug TEXT;
     v_table_name TEXT;
+    v_bucket_name TEXT;
     v_record public.subject_assignments%ROWTYPE;
     v_admin_email TEXT;
 BEGIN
@@ -326,33 +691,10 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    v_slug := regexp_replace(lower(v_subject_name), '[^a-z0-9]+', '_', 'g');
-    v_slug := trim(both '_' FROM v_slug);
-
-    IF v_slug = '' THEN
+    v_table_name := public._subject_name_to_table(v_subject_name);
+    IF v_table_name = '' THEN
         RAISE EXCEPTION 'Subject name must include letters or numbers.'
             USING ERRCODE = '22023';
-    END IF;
-
-    IF left(v_slug, 1) ~ '[0-9]' THEN
-        v_slug := 'subj_' || v_slug;
-    END IF;
-
-    v_table_name := rtrim(left(v_slug, 48), '_');
-
-    IF v_table_name IN (
-        'submissions',
-        'submission_files',
-        'admin_users',
-        'student_roster',
-        'subject_assignments',
-        'verification_attempts',
-        'subjects',
-        'assignments',
-        'users',
-        'profiles'
-    ) THEN
-        v_table_name := rtrim(left('subj_' || v_table_name, 48), '_');
     END IF;
 
     IF EXISTS (
@@ -370,11 +712,30 @@ BEGIN
             USING ERRCODE = '42P07';
     END IF;
 
-    v_admin_email := COALESCE((SELECT auth.jwt() ->> 'email'), 'Administrator');
+    v_bucket_name := public._subject_storage_bucket_name(v_table_name);
+    BEGIN
+        INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+        VALUES (
+            v_bucket_name,
+            v_bucket_name,
+            false,
+            15728640,
+            ARRAY['application/pdf', 'application/x-pdf']
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            public = false,
+            file_size_limit = 15728640,
+            allowed_mime_types = ARRAY['application/pdf', 'application/x-pdf'];
+    EXCEPTION WHEN OTHERS THEN
+        v_bucket_name := 'assignments';
+    END;
+
+    v_admin_email := COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com');
 
     INSERT INTO public.subject_assignments (
         subject_name,
         table_name,
+        storage_bucket,
         deadline,
         created_by,
         is_active
@@ -382,6 +743,7 @@ BEGIN
     VALUES (
         v_subject_name,
         v_table_name,
+        v_bucket_name,
         p_deadline,
         v_admin_email,
         true
@@ -411,11 +773,10 @@ BEGIN
         v_table_name
     );
 
-    EXECUTE format('CREATE INDEX %I ON public.%I (roll_number)', 'idx_' || v_table_name || '_roll', v_table_name);
-    EXECUTE format('CREATE INDEX %I ON public.%I (status)', 'idx_' || v_table_name || '_status', v_table_name);
-    EXECUTE format('CREATE INDEX %I ON public.%I (created_at DESC)', 'idx_' || v_table_name || '_created', v_table_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I (roll_number)', 'idx_' || v_table_name || '_roll', v_table_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I (status)', 'idx_' || v_table_name || '_status', v_table_name);
+    EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON public.%I (created_at DESC)', 'idx_' || v_table_name || '_created', v_table_name);
 
-    -- Enable strict RLS: zero anon table access (students use validated SECURITY DEFINER RPCs)
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', v_table_name);
     EXECUTE format('REVOKE ALL ON TABLE public.%I FROM PUBLIC, anon', v_table_name);
     EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO authenticated', v_table_name);
@@ -435,7 +796,7 @@ $$;
 REVOKE ALL ON FUNCTION public.create_subject_assignment(TEXT, TIMESTAMPTZ) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.create_subject_assignment(TEXT, TIMESTAMPTZ) TO authenticated;
 
--- 8. Harden roll pre-check RPC
+-- 8. Duplicate pre-check RPC (scoped strictly per subject table)
 CREATE OR REPLACE FUNCTION public.check_subject_roll_exists(
     p_table_name TEXT,
     p_roll_number TEXT
@@ -482,7 +843,7 @@ $$;
 REVOKE ALL ON FUNCTION public.check_subject_roll_exists(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_subject_roll_exists(TEXT, TEXT) TO anon, authenticated;
 
--- 9. Harden student submission & resubmission RPC with full server-side validation
+-- 9. Student submission & resubmission RPC (isolated per subject table & bucket)
 CREATE OR REPLACE FUNCTION public.submit_to_subject_table(
     p_table_name TEXT,
     p_roll_number TEXT,
@@ -509,7 +870,6 @@ DECLARE
     v_code_hash TEXT;
     v_file_path TEXT;
     v_file_name TEXT;
-    v_expected_prefix TEXT;
     v_now TIMESTAMPTZ := timezone('utc'::text, now());
     v_existing_id UUID;
     v_existing_status TEXT;
@@ -533,6 +893,7 @@ BEGIN
         RAISE EXCEPTION 'Assignment deadline passed. Submissions for this subject are closed.'
             USING ERRCODE = '42501';
     END IF;
+
     v_roll := UPPER(public._sanitize_portal_text(p_roll_number, 25));
     v_student := public._sanitize_portal_text(p_student_name, 120);
     v_live_url := NULLIF(public._sanitize_portal_text(p_live_website_url, 2048), '');
@@ -551,7 +912,6 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    -- Block XSS javascript:/data:/vbscript: URIs and embedded credentials at database boundary
     IF v_live_url IS NOT NULL THEN
         IF v_live_url ~ '\s' OR v_live_url !~* '^https?://[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:[0-9]{1,5})?([/?#].*)?$' THEN
             RAISE EXCEPTION 'Live website URL must start with http:// or https:// and contain a valid host.'
@@ -569,14 +929,12 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
-    v_expected_prefix := CASE
-        WHEN v_table_name = 'submissions' THEN v_roll || '/'
-        ELSE v_table_name || '/' || v_roll || '/'
-    END;
-
     IF position('..' in v_file_path) > 0
        OR position('//' in v_file_path) > 0
-       OR left(v_file_path, length(v_expected_prefix)) <> v_expected_prefix
+       OR NOT (
+           left(v_file_path, length(v_roll || '/')) = (v_roll || '/')
+           OR left(v_file_path, length(v_table_name || '/' || v_roll || '/')) = (v_table_name || '/' || v_roll || '/')
+       )
        OR v_file_path !~* '^[a-z0-9][a-z0-9._/-]*\.pdf$' THEN
         RAISE EXCEPTION 'Invalid storage file path.'
             USING ERRCODE = '22023';
@@ -764,9 +1122,10 @@ BEGIN
         END IF;
     END IF;
 
-    -- Clear any previous failed check lockout upon new submission
-    DELETE FROM public.verification_attempts
-    WHERE table_name = v_table_name AND roll_number = v_roll;
+    IF to_regclass('public.verification_attempts') IS NOT NULL THEN
+        DELETE FROM public.verification_attempts
+        WHERE table_name = v_table_name AND roll_number = v_roll;
+    END IF;
 
     RETURN json_build_object(
         'success', true,
@@ -782,7 +1141,7 @@ $$;
 REVOKE ALL ON FUNCTION public.submit_to_subject_table(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.submit_to_subject_table(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, BIGINT) TO anon, authenticated;
 
--- 10. Harden status verification RPC with brute-force throttling (max 5 failures / 15 min)
+-- 10. Hardened status checker RPC with brute-force throttling
 CREATE OR REPLACE FUNCTION public.check_subject_submission_secure(
     p_table_name TEXT,
     p_roll_number TEXT,
@@ -798,6 +1157,7 @@ DECLARE
     v_roll TEXT;
     v_hash TEXT;
     v_now TIMESTAMPTZ := timezone('utc'::text, now());
+    v_has_attempts BOOLEAN := (to_regclass('public.verification_attempts') IS NOT NULL);
     v_failed_attempts INT := 0;
     v_locked_until TIMESTAMPTZ;
     v_new_attempts INT := 0;
@@ -823,19 +1183,20 @@ BEGIN
         );
     END IF;
 
-    -- Check existing lockout before revealing or comparing submission details
-    SELECT failed_attempts, locked_until
-    INTO v_failed_attempts, v_locked_until
-    FROM public.verification_attempts
-    WHERE table_name = v_table_name AND roll_number = v_roll;
+    IF v_has_attempts THEN
+        SELECT failed_attempts, locked_until
+        INTO v_failed_attempts, v_locked_until
+        FROM public.verification_attempts
+        WHERE table_name = v_table_name AND roll_number = v_roll;
 
-    IF v_locked_until IS NOT NULL AND v_locked_until > v_now THEN
-        RETURN json_build_object(
-            'found', true,
-            'invalid_code', true,
-            'locked', true,
-            'message', 'Too many failed verification attempts. Please wait 15 minutes before trying again.'
-        );
+        IF v_locked_until IS NOT NULL AND v_locked_until > v_now THEN
+            RETURN json_build_object(
+                'found', true,
+                'invalid_code', true,
+                'locked', true,
+                'message', 'Too many failed verification attempts. Please wait 15 minutes before trying again.'
+            );
+        END IF;
     END IF;
 
     EXECUTE format(
@@ -853,20 +1214,18 @@ BEGIN
         );
     END IF;
 
-    -- Reject empty or malformed hashes (no bypass allowed)
     IF v_hash !~ '^[a-f0-9]{64}$' THEN
         RETURN json_build_object(
             'found', true,
             'invalid_code', true,
-            'message', 'Please enter the 4-digit verification code from your submission receipt.'
+            'message', 'Verification code does not match this roll number. Please double check your code.'
         );
     END IF;
 
     EXECUTE format(
         'SELECT status, student_name, roll_number, submission_ref, current_version, created_at, rejection_reason, rejected_at
          FROM public.%I
-         WHERE roll_number = $1
-           AND verification_code_hash = $2
+         WHERE roll_number = $1 AND verification_code_hash = $2
          LIMIT 1',
         v_table_name
     )
@@ -874,44 +1233,43 @@ BEGIN
     USING v_roll, v_hash;
 
     IF v_status IS NULL THEN
-        INSERT INTO public.verification_attempts (table_name, roll_number, failed_attempts, locked_until, last_attempt_at)
-        VALUES (v_table_name, v_roll, 1, NULL, v_now)
-        ON CONFLICT (table_name, roll_number) DO UPDATE
-        SET failed_attempts = CASE
-                WHEN verification_attempts.locked_until IS NOT NULL AND verification_attempts.locked_until <= v_now THEN 1
-                ELSE verification_attempts.failed_attempts + 1
-            END,
-            locked_until = CASE
-                WHEN (
-                    CASE
-                        WHEN verification_attempts.locked_until IS NOT NULL AND verification_attempts.locked_until <= v_now THEN 1
-                        ELSE verification_attempts.failed_attempts + 1
-                    END
-                ) >= 5 THEN v_now + interval '15 minutes'
-                ELSE NULL
-            END,
-            last_attempt_at = v_now
-        RETURNING failed_attempts INTO v_new_attempts;
-
-        IF v_new_attempts >= 5 THEN
-            RETURN json_build_object(
-                'found', true,
-                'invalid_code', true,
-                'locked', true,
-                'message', 'Too many failed verification attempts. Lookup locked for 15 minutes.'
-            );
+        IF v_has_attempts THEN
+            INSERT INTO public.verification_attempts (table_name, roll_number, failed_attempts, locked_until, last_attempt_at)
+            VALUES (v_table_name, v_roll, 1, NULL, v_now)
+            ON CONFLICT (table_name, roll_number)
+            DO UPDATE SET
+                failed_attempts = CASE
+                    WHEN verification_attempts.locked_until IS NOT NULL AND verification_attempts.locked_until <= v_now THEN 1
+                    ELSE verification_attempts.failed_attempts + 1
+                END,
+                locked_until = CASE
+                    WHEN (
+                        CASE
+                            WHEN verification_attempts.locked_until IS NOT NULL AND verification_attempts.locked_until <= v_now THEN 1
+                            ELSE verification_attempts.failed_attempts + 1
+                        END
+                    ) >= 5 THEN v_now + interval '15 minutes'
+                    ELSE NULL
+                END,
+                last_attempt_at = v_now
+            RETURNING failed_attempts INTO v_new_attempts;
         END IF;
 
         RETURN json_build_object(
             'found', true,
             'invalid_code', true,
-            'message', format('Verification code does not match this roll number (%s attempts remaining).', 5 - v_new_attempts)
+            'message',
+            CASE
+                WHEN v_new_attempts >= 5 THEN 'Too many failed verification attempts. Locked for 15 minutes.'
+                ELSE 'Verification code does not match this roll number. Please double check your code.'
+            END
         );
     END IF;
 
-    -- Reset attempt counter on successful verification
-    DELETE FROM public.verification_attempts
-    WHERE table_name = v_table_name AND roll_number = v_roll;
+    IF v_has_attempts THEN
+        DELETE FROM public.verification_attempts
+        WHERE table_name = v_table_name AND roll_number = v_roll;
+    END IF;
 
     RETURN json_build_object(
         'found', true,
@@ -930,25 +1288,7 @@ $$;
 REVOKE ALL ON FUNCTION public.check_subject_submission_secure(TEXT, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_subject_submission_secure(TEXT, TEXT, TEXT) TO anon, authenticated;
 
--- 11. Replace legacy check_submission_secure() to remove `OR p_code_hash = ''` bypass and apply lockout
-CREATE OR REPLACE FUNCTION public.check_submission_secure(
-    p_roll_number TEXT,
-    p_code_hash TEXT
-)
-RETURNS JSON
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-    RETURN public.check_subject_submission_secure('submissions', p_roll_number, p_code_hash);
-END;
-$$;
-
-REVOKE ALL ON FUNCTION public.check_submission_secure(TEXT, TEXT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.check_submission_secure(TEXT, TEXT) TO anon, authenticated;
-
--- 12. Harden Admin RPCs: get_subject_submissions & reject_subject_submission
+-- 11. Admin RPCs: Get & Reject submissions for any subject table (excludes verification_code_hash)
 CREATE OR REPLACE FUNCTION public.get_subject_submissions(p_table_name TEXT)
 RETURNS JSONB
 LANGUAGE plpgsql
@@ -1035,7 +1375,6 @@ BEGIN
         NULLIF(public._sanitize_portal_text(p_reason, 1000), ''),
         'Your assignment has been rejected by the instructor. Please upload an assignment that fulfills the requirements.'
     );
-    -- Always prefer authenticated JWT email over client-supplied field
     v_admin := COALESCE(
         NULLIF(trim(COALESCE((SELECT auth.jwt() ->> 'email'), '')), ''),
         NULLIF(public._sanitize_portal_text(p_rejected_by, 120), ''),
@@ -1100,7 +1439,7 @@ $$;
 REVOKE ALL ON FUNCTION public.reject_subject_submission(TEXT, UUID, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.reject_subject_submission(TEXT, UUID, TEXT, TEXT) TO authenticated;
 
--- 12b. Admin RPCs: Close an assignment (with 24h visibility timer) & Revert to reopen
+-- 12. Admin RPCs: Close Assignment (24h timer) & Revert Assignment
 CREATE OR REPLACE FUNCTION public.close_subject_assignment(p_table_name TEXT)
 RETURNS JSON
 LANGUAGE plpgsql
@@ -1124,23 +1463,6 @@ BEGIN
         updated_at = v_now
     WHERE table_name = v_table_name
     RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
-
-    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
-        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, closed_at, updated_at)
-        VALUES (
-            'Compiler Construction',
-            'submissions',
-            TIMESTAMPTZ '2026-12-31 23:59:00+00',
-            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
-            true,
-            v_now,
-            v_now
-        )
-        ON CONFLICT (table_name) DO UPDATE
-            SET closed_at = COALESCE(public.subject_assignments.closed_at, v_now),
-                updated_at = v_now
-        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
-    END IF;
 
     IF v_updated IS NULL THEN
         RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
@@ -1179,24 +1501,6 @@ BEGIN
     WHERE table_name = v_table_name
     RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
 
-    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
-        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, closed_at, updated_at)
-        VALUES (
-            'Compiler Construction',
-            'submissions',
-            TIMESTAMPTZ '2026-12-31 23:59:00+00',
-            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
-            true,
-            NULL,
-            v_now
-        )
-        ON CONFLICT (table_name) DO UPDATE
-            SET closed_at = NULL,
-                is_active = true,
-                updated_at = v_now
-        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
-    END IF;
-
     IF v_updated IS NULL THEN
         RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
             USING ERRCODE = 'P0002';
@@ -1209,70 +1513,7 @@ $$;
 REVOKE ALL ON FUNCTION public.revert_subject_assignment(TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.revert_subject_assignment(TEXT) TO authenticated;
 
--- 13. Harden Storage RLS for private `assignments` bucket (PDFs only, no traversal, no anon reads)
-UPDATE storage.buckets
-SET public = false,
-    file_size_limit = 15728640,
-    allowed_mime_types = ARRAY['application/pdf', 'application/x-pdf']
-WHERE id = 'assignments';
-
-DO $$
-DECLARE
-    v_pol RECORD;
-BEGIN
-    FOR v_pol IN
-        SELECT policyname
-        FROM pg_catalog.pg_policies
-        WHERE schemaname = 'storage'
-          AND tablename = 'objects'
-          AND (
-              coalesce(qual, '') ~* 'assignments'
-              OR coalesce(with_check, '') ~* 'assignments'
-              OR policyname IN (
-                  'Allow student PDF uploads',
-                  'Admins can view and download assignment files',
-                  'Service role full storage access',
-                  'Students upload assignment PDFs',
-                  'Admins read assignment PDFs',
-                  'Admins delete assignment PDFs'
-              )
-          )
-    LOOP
-        EXECUTE format('DROP POLICY IF EXISTS %I ON storage.objects', v_pol.policyname);
-    END LOOP;
-END;
-$$;
-
-CREATE POLICY "Students upload assignment PDFs"
-    ON storage.objects
-    FOR INSERT
-    TO anon, authenticated
-    WITH CHECK (
-        bucket_id = 'assignments'
-        AND name ~* '^[a-z0-9][a-z0-9._/-]*\.pdf$'
-        AND position('..' in name) = 0
-        AND position('//' in name) = 0
-    );
-
-CREATE POLICY "Admins read assignment PDFs"
-    ON storage.objects
-    FOR SELECT
-    TO authenticated
-    USING (
-        bucket_id = 'assignments'
-        AND (SELECT public.is_admin())
-    );
-
-CREATE POLICY "Admins delete assignment PDFs"
-    ON storage.objects
-    FOR DELETE
-    TO authenticated
-    USING (
-        bucket_id = 'assignments'
-        AND (SELECT public.is_admin())
-    );
-
--- 14. Admin RPCs: Update assignment name/deadline & permanently delete an assignment
+-- 13. Admin RPCs: Edit Assignment (automatically renames table to match subject name) & Delete Assignment
 CREATE OR REPLACE FUNCTION public.update_subject_assignment(
     p_table_name TEXT,
     p_subject_name TEXT,
@@ -1286,6 +1527,7 @@ AS $$
 DECLARE
     v_table_name TEXT;
     v_subject_name TEXT;
+    v_new_table TEXT;
     v_now TIMESTAMPTZ := timezone('utc'::text, now());
     v_updated JSON;
 BEGIN
@@ -1307,44 +1549,74 @@ BEGIN
             USING ERRCODE = '22023';
     END IF;
 
+    v_new_table := public._subject_name_to_table(v_subject_name);
+    IF v_new_table = '' THEN
+        RAISE EXCEPTION 'Subject name must include letters or numbers.'
+            USING ERRCODE = '22023';
+    END IF;
+
     IF EXISTS (
         SELECT 1
         FROM public.subject_assignments sa
-        WHERE lower(sa.subject_name) = lower(v_subject_name)
+        WHERE (lower(sa.subject_name) = lower(v_subject_name) OR sa.table_name = v_new_table)
           AND sa.table_name <> v_table_name
     ) THEN
         RAISE EXCEPTION 'An assignment for subject "%" already exists.', v_subject_name
             USING ERRCODE = '23505';
     END IF;
 
+    IF v_new_table <> v_table_name THEN
+        IF to_regclass(format('public.%I', v_new_table)) IS NOT NULL THEN
+            RAISE EXCEPTION 'Table "public.%" already exists in Supabase.', v_new_table
+                USING ERRCODE = '42P07';
+        END IF;
+
+        EXECUTE format('ALTER TABLE public.%I RENAME TO %I', v_table_name, v_new_table);
+
+        EXECUTE format('ALTER INDEX IF EXISTS public.%I RENAME TO %I', 'idx_' || v_table_name || '_roll', 'idx_' || v_new_table || '_roll');
+        EXECUTE format('ALTER INDEX IF EXISTS public.%I RENAME TO %I', 'idx_' || v_table_name || '_status', 'idx_' || v_new_table || '_status');
+        EXECUTE format('ALTER INDEX IF EXISTS public.%I RENAME TO %I', 'idx_' || v_table_name || '_created', 'idx_' || v_new_table || '_created');
+
+        EXECUTE format('DROP POLICY IF EXISTS "Admins manage %s" ON public.%I', v_table_name, v_new_table);
+        EXECUTE format('DROP POLICY IF EXISTS "Admins manage %s" ON public.%I', v_new_table, v_new_table);
+        EXECUTE format(
+            'CREATE POLICY "Admins manage %s" ON public.%I FOR ALL TO authenticated USING ((SELECT public.is_admin())) WITH CHECK ((SELECT public.is_admin()))',
+            v_new_table,
+            v_new_table
+        );
+
+        IF v_table_name = 'submissions' THEN
+            EXECUTE format(
+                'ALTER TABLE public.%I
+                    ADD COLUMN IF NOT EXISTS file_path TEXT,
+                    ADD COLUMN IF NOT EXISTS file_name TEXT,
+                    ADD COLUMN IF NOT EXISTS file_size BIGINT,
+                    ADD COLUMN IF NOT EXISTS files JSONB NOT NULL DEFAULT ''[]''::jsonb',
+                v_new_table
+            );
+        END IF;
+
+        IF to_regclass('public.verification_attempts') IS NOT NULL THEN
+            UPDATE public.verification_attempts
+            SET table_name = v_new_table
+            WHERE table_name = v_table_name;
+        END IF;
+    END IF;
+
     UPDATE public.subject_assignments
     SET subject_name = v_subject_name,
+        table_name = v_new_table,
         deadline = p_deadline,
         updated_at = v_now
     WHERE table_name = v_table_name
     RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
 
-    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
-        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, updated_at)
-        VALUES (
-            v_subject_name,
-            'submissions',
-            p_deadline,
-            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
-            true,
-            v_now
-        )
-        ON CONFLICT (table_name) DO UPDATE
-            SET subject_name = EXCLUDED.subject_name,
-                deadline = EXCLUDED.deadline,
-                updated_at = v_now
-        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
-    END IF;
-
     IF v_updated IS NULL THEN
         RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
             USING ERRCODE = 'P0002';
     END IF;
+
+    PERFORM pg_notify('pgrst', 'reload schema');
 
     RETURN v_updated;
 END;
@@ -1362,6 +1634,7 @@ AS $$
 DECLARE
     v_table_name TEXT;
     v_deleted_name TEXT;
+    v_deleted_bucket TEXT;
 BEGIN
     IF NOT public.is_admin() THEN
         RAISE EXCEPTION 'Forbidden: Only authorized administrators can delete subject assignments.'
@@ -1387,27 +1660,36 @@ BEGIN
 
     DELETE FROM public.subject_assignments
     WHERE table_name = v_table_name
-    RETURNING subject_name INTO v_deleted_name;
+    RETURNING subject_name, storage_bucket INTO v_deleted_name, v_deleted_bucket;
 
     IF v_deleted_name IS NULL AND v_table_name <> 'submissions' THEN
         RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
             USING ERRCODE = 'P0002';
     END IF;
 
-    DELETE FROM public.verification_attempts
-    WHERE table_name = v_table_name;
+    IF to_regclass('public.verification_attempts') IS NOT NULL THEN
+        DELETE FROM public.verification_attempts
+        WHERE table_name = v_table_name;
+    END IF;
 
     IF v_table_name = 'submissions' THEN
-        DELETE FROM public.submission_files;
-        DELETE FROM public.submissions;
+        IF to_regclass('public.submission_files') IS NOT NULL THEN
+            DELETE FROM public.submission_files;
+        END IF;
+        IF to_regclass('public.submissions') IS NOT NULL THEN
+            DELETE FROM public.submissions;
+        END IF;
     ELSE
         EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', v_table_name);
     END IF;
 
+    PERFORM pg_notify('pgrst', 'reload schema');
+
     RETURN json_build_object(
         'success', true,
         'table_name', v_table_name,
-        'subject_name', COALESCE(v_deleted_name, 'Compiler Construction')
+        'subject_name', COALESCE(v_deleted_name, 'Compiler Construction'),
+        'storage_bucket', COALESCE(v_deleted_bucket, 'assignments')
     );
 END;
 $$;

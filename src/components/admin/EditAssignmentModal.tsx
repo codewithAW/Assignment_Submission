@@ -3,6 +3,7 @@ import {
   Pencil,
   Calendar,
   Database,
+  HardDrive,
   AlertCircle,
   AlertTriangle,
   Trash2,
@@ -15,6 +16,7 @@ import { Modal } from '../ui/Modal';
 import { submissionService } from '../../services/submissionService';
 import type { SubjectAssignment } from '../../types';
 import { toDateTimeLocalInput } from '../../utils/date';
+import { subjectNameToTableName } from '../../utils/security';
 import editDeleteSql from '../../../supabase/edit_delete_assignment_setup.sql?raw';
 
 interface EditAssignmentModalProps {
@@ -48,6 +50,8 @@ const EditAssignmentFormBody: React.FC<EditAssignmentFormBodyProps> = ({
   const [copiedSql, setCopiedSql] = useState(false);
 
   const isBusy = isSaving || isDeleting;
+  const targetTableName = subjectNameToTableName(subjectName) || subject.table_name;
+  const willRenameTable = targetTableName !== subject.table_name;
 
   const handleCopySql = () => {
     navigator.clipboard.writeText(editDeleteSql);
@@ -147,12 +151,26 @@ const EditAssignmentFormBody: React.FC<EditAssignmentFormBodyProps> = ({
             placeholder="e.g. Compiler Construction"
             className="glossy-input w-full px-4 py-3 rounded-2xl text-base sm:text-sm"
           />
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-            <Database className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Supabase Table:</span>
-            <code className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-600 dark:text-sky-300 font-semibold">
-              public.{subject.table_name}
-            </code>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Table:</span>
+              <code className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-600 dark:text-sky-300 font-semibold">
+                public.{targetTableName}
+              </code>
+              {willRenameTable && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                  (renames from public.{subject.table_name})
+                </span>
+              )}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <HardDrive className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span>Bucket:</span>
+              <code className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-semibold">
+                {subject.storage_bucket || 'assignments'}
+              </code>
+            </span>
           </div>
         </div>
 

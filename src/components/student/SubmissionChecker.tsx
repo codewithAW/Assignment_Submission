@@ -12,7 +12,7 @@ import {
   RotateCcw,
   AlertTriangle,
 } from 'lucide-react';
-import { submissionService } from '../../services/submissionService';
+import { submissionService, DEFAULT_SUBJECT } from '../../services/submissionService';
 import { normalizeRollNumber, isValidRollNumber } from '../../utils/rollNumber';
 import type { CheckSubmissionResult, SubjectAssignment } from '../../types';
 import { formatDate } from '../../utils/date';
@@ -59,8 +59,8 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({
       const res = await submissionService.checkSubmission(
         normalized,
         verificationCode.trim(),
-        activeSubject?.table_name || 'submissions',
-        activeSubject?.subject_name || 'Compiler Construction'
+        activeSubject?.table_name || DEFAULT_SUBJECT.table_name,
+        activeSubject?.subject_name || DEFAULT_SUBJECT.subject_name
       );
       setResult(res);
     } catch (err: any) {

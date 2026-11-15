@@ -4,6 +4,7 @@ export interface SubjectAssignment {
   id: string;
   subject_name: string;
   table_name: string;
+  storage_bucket?: string | null;
   deadline: string;
   created_by?: string | null;
   is_active: boolean;

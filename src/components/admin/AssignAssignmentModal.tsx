@@ -3,6 +3,7 @@ import {
   BookPlus,
   Calendar,
   Database,
+  HardDrive,
   AlertCircle,
   Copy,
   Check,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { submissionService } from '../../services/submissionService';
-import { subjectNameToTableName } from '../../utils/security';
+import { subjectNameToTableName, tableNameToStorageBucket } from '../../utils/security';
 import { toDateTimeLocalInput } from '../../utils/date';
 import type { SubjectAssignment } from '../../types';
 import multiSubjectSql from '../../../supabase/multi_subject_setup.sql?raw';
@@ -41,6 +42,10 @@ export const AssignAssignmentModal: React.FC<AssignAssignmentModalProps> = ({
   const [copiedSql, setCopiedSql] = useState(false);
 
   const previewTableName = useMemo(() => subjectNameToTableName(subjectName), [subjectName]);
+  const previewBucketName = useMemo(
+    () => (previewTableName ? tableNameToStorageBucket(previewTableName) : 'subject-name'),
+    [previewTableName]
+  );
 
   const handleClose = () => {
     if (isSubmitting) return;
@@ -93,7 +98,7 @@ export const AssignAssignmentModal: React.FC<AssignAssignmentModalProps> = ({
         <div className="p-3.5 rounded-2xl bg-sky-50/80 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-500/30 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2.5">
           <Sparkles className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0 mt-0.5" />
           <span>
-            Creating a new assignment automatically generates a dedicated PostgreSQL table in Supabase named after the subject, registers its deadline, and publishes it to the Student Portal.
+            Creating a new assignment automatically generates a dedicated PostgreSQL table and private Storage bucket named after the subject, registers its deadline, and publishes it to the Student Portal.
           </span>
         </div>
 
@@ -141,12 +146,21 @@ export const AssignAssignmentModal: React.FC<AssignAssignmentModalProps> = ({
             disabled={isSubmitting}
             className="glossy-input w-full px-4 py-3 rounded-2xl text-base sm:text-sm"
           />
-          <div className="mt-2 flex items-center gap-1.5 text-[11px] font-mono text-slate-500 dark:text-slate-400">
-            <Database className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span>Supabase Table:</span>
-            <code className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-600 dark:text-sky-300 font-semibold">
-              public.{previewTableName || 'subject_name'}
-            </code>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-mono text-slate-500 dark:text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <Database className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span>Table:</span>
+              <code className="px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-sky-600 dark:text-sky-300 font-semibold">
+                public.{previewTableName || 'subject_name'}
+              </code>
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <HardDrive className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+              <span>Bucket:</span>
+              <code className="px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-300 font-semibold">
+                {previewBucketName}
+              </code>
+            </span>
           </div>
         </div>
 

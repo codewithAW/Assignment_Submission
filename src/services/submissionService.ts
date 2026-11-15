@@ -19,18 +19,24 @@ import {
   sanitizeHttpUrl,
   sanitizeText,
   sanitizeFileName,
+  sanitizeStorageBucket,
   subjectNameToTableName,
+  tableNameToStorageBucket,
 } from '../utils/security';
 
 export const DEFAULT_SUBJECT: SubjectAssignment = {
-  id: 'default-submissions',
+  id: 'default-compiler-construction',
   subject_name: 'Compiler Construction',
-  table_name: 'submissions',
+  table_name: 'compiler_construction',
+  storage_bucket: 'compiler-construction',
   deadline: '2026-12-31T23:59:00.000Z',
   created_by: 'shahmproject@gmail.com',
   is_active: true,
   created_at: '2026-11-03T00:00:00.000Z',
 };
+
+const isDefaultCompilerTable = (tableName: string): boolean =>
+  tableName === 'compiler_construction' || tableName === 'submissions';
 
 // Default Student Roster (used when local offline test mode is active)
 export const DEFAULT_ROSTER: StudentRosterItem[] = [
@@ -51,11 +57,15 @@ const STORAGE_KEY_SUBJECTS = 'asp_portal_subjects_v1';
 const STORAGE_KEY_ROSTER = 'cc_portal_roster_v1';
 
 function getLocalSubmissionKey(tableName: string): string {
-  return tableName === 'submissions' ? 'cc_portal_submissions_v1' : `asp_portal_subs_${tableName}_v1`;
+  return isDefaultCompilerTable(tableName)
+    ? 'cc_portal_submissions_v1'
+    : `asp_portal_subs_${tableName}_v1`;
 }
 
 function getLocalFilesKey(tableName: string): string {
-  return tableName === 'submissions' ? 'cc_portal_files_v1' : `asp_portal_files_${tableName}_v1`;
+  return isDefaultCompilerTable(tableName)
+    ? 'cc_portal_files_v1'
+    : `asp_portal_files_${tableName}_v1`;
 }
 
 function initializeLocalSubjects(): SubjectAssignment[] {
@@ -89,7 +99,7 @@ function updateLocalSubjectEntry(
   return updated;
 }
 
-function initializeLocalData(tableName = 'submissions'): {
+function initializeLocalData(tableName = DEFAULT_SUBJECT.table_name): {
   submissions: Submission[];
   files: SubmissionFile[];
   roster: StudentRosterItem[];
@@ -113,7 +123,7 @@ function initializeLocalData(tableName = 'submissions'): {
     console.error('Error reading local storage', e);
   }
 
-  if (tableName !== 'submissions') {
+  if (!isDefaultCompilerTable(tableName)) {
     return { submissions: [], files: [], roster: DEFAULT_ROSTER };
   }
 
@@ -304,13 +314,38 @@ export const submissionService = {
       if (error) {
         if (isMissingSqlObjectError(error)) {
           throw createMigrationRequiredError(
-            'Database function create_subject_assignment() is not installed in Supabase yet. Copy & run the multi-subject SQL setup script in Supabase Dashboard -> SQL Editor.'
+            `Supabase SQL setup needed (${error.message}). Copy & run supabase/multi_subject_setup.sql in Supabase Dashboard -> SQL Editor.`
           );
         }
         throw new Error(error.message || 'Failed to create subject table in Supabase.');
       }
 
-      return data as SubjectAssignment;
+      const created = data as SubjectAssignment;
+      const desiredBucket = tableNameToStorageBucket(created.table_name);
+      if (
+        desiredBucket &&
+        desiredBucket !== 'assignments' &&
+        (!created.storage_bucket || created.storage_bucket === 'assignments')
+      ) {
+        try {
+          const { error: bucketErr } = await supabase.storage.createBucket(desiredBucket, {
+            public: false,
+            fileSizeLimit: 15728640,
+            allowedMimeTypes: ['application/pdf', 'application/x-pdf'],
+          });
+          if (!bucketErr || bucketErr.message?.toLowerCase().includes('already exists')) {
+            await supabase
+              .from('subject_assignments')
+              .update({ storage_bucket: desiredBucket })
+              .eq('table_name', created.table_name);
+            created.storage_bucket = desiredBucket;
+          }
+        } catch {
+          // Keep safe isolated folder fallback inside 'assignments' bucket if Storage bucket creation is restricted
+        }
+      }
+
+      return created;
     }
 
     // Offline local simulation only when Supabase is not configured
@@ -332,6 +367,7 @@ export const submissionService = {
       id: `subj-${Date.now()}`,
       subject_name: cleanName,
       table_name: tableName,
+      storage_bucket: tableNameToStorageBucket(tableName),
       deadline: parsedDate.toISOString(),
       created_by: 'local-admin',
       is_active: true,
@@ -446,17 +482,39 @@ export const submissionService = {
     }
 
     return updateLocalSubjectEntry(cleanTable, (current, existing) => {
+      const nextTable = subjectNameToTableName(cleanName);
+      if (!nextTable) {
+        throw new Error('Assignment name must contain letters or numbers.');
+      }
       if (
         existing.some(
           (s) =>
-            s.table_name !== cleanTable && s.subject_name.toLowerCase() === cleanName.toLowerCase()
+            s.table_name !== cleanTable &&
+            (s.subject_name.toLowerCase() === cleanName.toLowerCase() || s.table_name === nextTable)
         )
       ) {
         throw new Error(`An assignment named "${cleanName}" already exists.`);
       }
+
+      if (nextTable !== cleanTable) {
+        try {
+          const oldSubs = localStorage.getItem(getLocalSubmissionKey(cleanTable));
+          const oldFiles = localStorage.getItem(getLocalFilesKey(cleanTable));
+          if (oldSubs) {
+            localStorage.setItem(getLocalSubmissionKey(nextTable), oldSubs);
+            localStorage.removeItem(getLocalSubmissionKey(cleanTable));
+          }
+          if (oldFiles) {
+            localStorage.setItem(getLocalFilesKey(nextTable), oldFiles);
+            localStorage.removeItem(getLocalFilesKey(cleanTable));
+          }
+        } catch {}
+      }
+
       return {
         ...current,
         subject_name: cleanName,
+        table_name: nextTable,
         deadline: parsedDate.toISOString(),
         updated_at: new Date().toISOString(),
       };
@@ -464,7 +522,7 @@ export const submissionService = {
   },
 
   /**
-   * Admin: Permanently delete a subject assignment, its submissions, and its dedicated table
+   * Admin: Permanently delete a subject assignment, its submissions, its dedicated table, and its storage bucket
    */
   async deleteSubjectAssignment(
     tableName: string
@@ -475,7 +533,19 @@ export const submissionService = {
     }
 
     if (isSupabaseConfigured && supabase) {
-      // Collect stored file paths before dropping the subject table so storage can be cleaned afterward
+      // Collect storage bucket and file paths before dropping the subject table
+      let bucketToClean = 'assignments';
+      try {
+        const { data: subjMeta } = await supabase
+          .from('subject_assignments')
+          .select('storage_bucket')
+          .eq('table_name', cleanTable)
+          .maybeSingle();
+        bucketToClean = sanitizeStorageBucket(subjMeta?.storage_bucket) || 'assignments';
+      } catch {
+        // Non-fatal
+      }
+
       const pathsToRemove: string[] = [];
       try {
         const { data: rows } = await supabase.rpc('get_subject_submissions', {
@@ -509,11 +579,26 @@ export const submissionService = {
         throw new Error(error.message || 'Failed to delete assignment.');
       }
 
+      const rpcBucket = sanitizeStorageBucket(data?.storage_bucket) || bucketToClean;
+      const bucketsToRemoveFrom = new Set<string>(['assignments']);
+      if (rpcBucket) bucketsToRemoveFrom.add(rpcBucket);
+
       if (pathsToRemove.length > 0) {
+        for (const b of bucketsToRemoveFrom) {
+          try {
+            await supabase.storage.from(b).remove(pathsToRemove);
+          } catch {
+            // Best-effort storage cleanup after DB table removal
+          }
+        }
+      }
+
+      if (rpcBucket && rpcBucket !== 'assignments') {
         try {
-          await supabase.storage.from('assignments').remove(pathsToRemove);
+          await supabase.storage.emptyBucket(rpcBucket);
+          await supabase.storage.deleteBucket(rpcBucket);
         } catch {
-          // Best-effort storage cleanup after DB table removal
+          // Best-effort bucket cleanup after DB table removal
         }
       }
 
@@ -551,8 +636,12 @@ export const submissionService = {
   ): Promise<SubmitAssignmentResponse> {
     const studentName = sanitizeText(payload.student_name, 120);
     const rollNumber = normalizeRollNumber(sanitizeText(payload.roll_number, 25));
-    const tableName = sanitizeText(payload.table_name || 'submissions', 48) || 'submissions';
-    const subjectName = sanitizeText(payload.subject_name || 'Compiler Construction', 100) || 'Compiler Construction';
+    const tableName =
+      sanitizeText(payload.table_name || DEFAULT_SUBJECT.table_name, 48) ||
+      DEFAULT_SUBJECT.table_name;
+    const subjectName =
+      sanitizeText(payload.subject_name || DEFAULT_SUBJECT.subject_name, 100) ||
+      DEFAULT_SUBJECT.subject_name;
 
     // 1. Validation checks
     if (studentName.length < 2) {
@@ -585,10 +674,10 @@ export const submissionService = {
 
     // 3. Live Supabase Path
     if (isSupabaseConfigured && supabase) {
-      // Guard against closed subject before uploading PDF to storage
+      // Guard against closed subject & read dedicated storage bucket before uploading PDF
       const { data: subjState, error: subjErr } = await supabase
         .from('subject_assignments')
-        .select('closed_at, is_active')
+        .select('*')
         .eq('table_name', tableName)
         .maybeSingle();
 
@@ -599,7 +688,7 @@ export const submissionService = {
       let version = 1;
       let submissionRef = generateSubmissionRef();
 
-      // Step A: Pre-check duplicate BEFORE uploading PDF to private bucket
+      // Step A: Pre-check duplicate inside this subject's dedicated table BEFORE uploading PDF
       const { data: checkData, error: checkErr } = await supabase.rpc('check_subject_roll_exists', {
         p_table_name: tableName,
         p_roll_number: rollNumber,
@@ -616,7 +705,9 @@ export const submissionService = {
           submissionRef = checkData.submission_ref || submissionRef;
         }
       } else if (isMissingSqlObjectError(checkErr)) {
-        throw createMigrationRequiredError();
+        throw createMigrationRequiredError(
+          `Multi-subject database setup needed (${checkErr?.message || 'missing RPC'}). Copy & run supabase/multi_subject_setup.sql in Supabase Dashboard -> SQL Editor.`
+        );
       } else if (checkErr) {
         throw new Error(checkErr.message || 'Failed to verify existing submission status.');
       }
@@ -627,18 +718,38 @@ export const submissionService = {
       const codeHash = await sha256(verificationCode);
       const nowIso = new Date().toISOString();
 
-      // Step B: Upload PDF to private Supabase storage bucket 'assignments'
-      const storagePath =
-        tableName === 'submissions'
+      // Step B: Upload PDF to the subject's dedicated private storage bucket (with folder fallback inside 'assignments')
+      const preferredBucket = sanitizeStorageBucket(subjState?.storage_bucket) || 'assignments';
+      const buildPath = (bucket: string) =>
+        bucket !== 'assignments' || tableName === 'submissions'
           ? `${rollNumber}/v${version}_${Date.now()}_${safeFileName}`
           : `${tableName}/${rollNumber}/v${version}_${Date.now()}_${safeFileName}`;
 
-      const { error: uploadErr } = await supabase.storage
-        .from('assignments')
+      let activeBucket = preferredBucket;
+      let storagePath = buildPath(activeBucket);
+
+      let { error: uploadErr } = await supabase.storage
+        .from(activeBucket)
         .upload(storagePath, payload.file, {
           contentType: 'application/pdf',
           upsert: false,
         });
+
+      if (
+        uploadErr &&
+        activeBucket !== 'assignments' &&
+        uploadErr.message?.toLowerCase().includes('bucket')
+      ) {
+        activeBucket = 'assignments';
+        storagePath = buildPath(activeBucket);
+        const fallbackRes = await supabase.storage
+          .from(activeBucket)
+          .upload(storagePath, payload.file, {
+            contentType: 'application/pdf',
+            upsert: false,
+          });
+        uploadErr = fallbackRes.error;
+      }
 
       if (uploadErr) {
         throw new Error(`Failed to upload PDF to secure storage: ${uploadErr.message}`);
@@ -661,7 +772,9 @@ export const submissionService = {
 
       if (submitErr || !rpcRes) {
         if (isMissingSqlObjectError(submitErr)) {
-          throw createMigrationRequiredError();
+          throw createMigrationRequiredError(
+            `Multi-subject database setup needed (${submitErr?.message || 'missing database object'}). Copy & run supabase/multi_subject_setup.sql in Supabase Dashboard -> SQL Editor.`
+          );
         }
         const rpcMsg = submitErr?.message || 'Database submission failed.';
         if (rpcMsg.toLowerCase().includes('assignment deadline passed')) {
@@ -787,8 +900,8 @@ export const submissionService = {
   async checkSubmission(
     rollNumberInput: string,
     verificationCode?: string,
-    tableName = 'submissions',
-    subjectName = 'Compiler Construction'
+    tableName = DEFAULT_SUBJECT.table_name,
+    subjectName = DEFAULT_SUBJECT.subject_name
   ): Promise<CheckSubmissionResult> {
     const rollNumber = normalizeRollNumber(sanitizeText(rollNumberInput, 25));
     if (!rollNumber) {
@@ -873,7 +986,7 @@ export const submissionService = {
   /**
    * Admin: Fetch all submissions for the selected subject table + student roster
    */
-  async getAdminDashboardData(tableName = 'submissions'): Promise<{
+  async getAdminDashboardData(tableName = DEFAULT_SUBJECT.table_name): Promise<{
     submissions: Submission[];
     roster: StudentRosterItem[];
   }> {
@@ -944,7 +1057,7 @@ export const submissionService = {
     submissionId: string,
     reason: string,
     adminEmail = 'Administrator',
-    tableName = 'submissions'
+    tableName = DEFAULT_SUBJECT.table_name
   ): Promise<Submission> {
     const nowIso = new Date().toISOString();
     const cleanedReason = sanitizeText(reason, 1000, true);
@@ -1013,7 +1126,12 @@ export const submissionService = {
   /**
    * Admin: Get signed URL for PDF viewing or downloading
    */
-  async getSignedPdfUrl(filePath: string, download = false, fileName?: string): Promise<string> {
+  async getSignedPdfUrl(
+    filePath: string,
+    download = false,
+    fileName?: string,
+    storageBucket?: string | null
+  ): Promise<string> {
     const cleanPath = sanitizeText(filePath, 512);
     if (
       !cleanPath ||
@@ -1027,11 +1145,23 @@ export const submissionService = {
     const safeDownloadName = fileName ? sanitizeFileName(fileName) : true;
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase.storage
-        .from('assignments')
+      const primaryBucket = sanitizeStorageBucket(storageBucket) || 'assignments';
+      let { data, error } = await supabase.storage
+        .from(primaryBucket)
         .createSignedUrl(cleanPath, 120, {
           download: download ? safeDownloadName : false,
         });
+
+      // Fallback to shared 'assignments' bucket for historical files uploaded before separate subject buckets
+      if ((error || !data?.signedUrl) && primaryBucket !== 'assignments') {
+        const legacyRes = await supabase.storage
+          .from('assignments')
+          .createSignedUrl(cleanPath, 120, {
+            download: download ? safeDownloadName : false,
+          });
+        data = legacyRes.data;
+        error = legacyRes.error;
+      }
 
       if (error || !data?.signedUrl) {
         throw new Error(`Failed to create signed URL: ${error?.message || 'Unknown error'}`);

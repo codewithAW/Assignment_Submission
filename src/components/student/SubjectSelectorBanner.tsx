@@ -58,7 +58,7 @@ export const SubjectSelectorBanner: React.FC<SubjectSelectorBannerProps> = ({
               Subject Warning • Select Before Submission
             </span>
             <span>
-              Please choose the correct <strong>Subject</strong> below before submitting your assignment. Submissions are saved inside that subject&apos;s dedicated database table.
+              Please choose the correct <strong>Subject</strong> below before submitting your assignment. Submissions are saved inside that subject&apos;s dedicated database table and storage section.
             </span>
           </div>
         </div>

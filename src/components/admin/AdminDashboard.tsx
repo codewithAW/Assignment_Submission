@@ -15,9 +15,10 @@ import {
   BookOpen,
   Calendar,
   Database,
+  HardDrive,
   Pencil
 } from 'lucide-react';
-import { submissionService } from '../../services/submissionService';
+import { submissionService, DEFAULT_SUBJECT } from '../../services/submissionService';
 import type { Submission, StudentRosterItem, AdminUser, SubjectAssignment } from '../../types';
 import { formatDate } from '../../utils/date';
 import { SubmissionsTable } from './SubmissionsTable';
@@ -47,7 +48,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   onBackToPortal,
 }) => {
   const [activeSubjectTable, setActiveSubjectTable] = useState<string>(
-    subjects[0]?.table_name || 'submissions'
+    subjects[0]?.table_name || DEFAULT_SUBJECT.table_name
   );
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [roster, setRoster] = useState<StudentRosterItem[]>([]);
@@ -89,7 +90,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     if (!silent) setIsLoading(true);
     else setIsRefreshing(true);
 
-    const targetTable = tableOverride || activeSubject?.table_name || 'submissions';
+    const targetTable = tableOverride || activeSubject?.table_name || DEFAULT_SUBJECT.table_name;
 
     try {
       const data = await submissionService.getAdminDashboardData(targetTable);
@@ -143,16 +144,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     showToast(
       'success',
       `Assignment Assigned: ${created.subject_name}`,
-      `Supabase table "public.${created.table_name}" created successfully.`
+      `Table "public.${created.table_name}" & storage "${created.storage_bucket || 'assignments'}" created.`
     );
   };
 
   const handleAssignmentUpdated = async (updated: SubjectAssignment) => {
+    setActiveSubjectTable(updated.table_name);
     await onSubjectsChanged();
     showToast(
       'success',
       `Assignment Updated: ${updated.subject_name}`,
-      `New deadline: ${formatDate(updated.deadline)}`
+      `Table "public.${updated.table_name}" • Deadline: ${formatDate(updated.deadline)}`
     );
   };
 
@@ -216,7 +218,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleViewPdf = async (filePath: string, fileName: string) => {
     try {
       showToast('info', 'Generating Secure Stream', 'Authorizing administrator access...');
-      const url = await submissionService.getSignedPdfUrl(filePath, false, fileName);
+      const url = await submissionService.getSignedPdfUrl(
+        filePath,
+        false,
+        fileName,
+        activeSubject?.storage_bucket
+      );
       setPreviewPdfUrl(url);
       setPreviewPdfName(fileName);
     } catch (err: any) {
@@ -227,7 +234,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleDownloadPdf = async (filePath: string, fileName: string) => {
     try {
       showToast('info', 'Preparing Download', 'Generating secure attachment token...');
-      const url = await submissionService.getSignedPdfUrl(filePath, true, fileName);
+      const url = await submissionService.getSignedPdfUrl(
+        filePath,
+        true,
+        fileName,
+        activeSubject?.storage_bucket
+      );
       const link = document.createElement('a');
       link.href = url;
       link.download = fileName;
@@ -320,6 +332,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
                     <Database className="w-3 h-3 text-emerald-500" />
                     public.{activeSubject.table_name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30">
+                    <HardDrive className="w-3 h-3 text-indigo-500" />
+                    storage:{activeSubject.storage_bucket || 'assignments'}
                   </span>
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
                     <Calendar className="w-3 h-3 text-amber-500" />
