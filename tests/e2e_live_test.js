@@ -1,10 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import crypto from 'crypto';
 
-const devUrl = 'http://localhost:5174';
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const anonKey = 'sb_publishable_Z7SmcfqvxqKiSIz4qIeP5g_TFUBz89O';
-const serviceKey = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const devUrl = process.env.DEV_URL || 'http://localhost:5174';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const anonKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const adminEmail = process.env.ADMIN_EMAIL || '';
+const adminPassword = process.env.ADMIN_PASSWORD || '';
+
+if (!supabaseUrl || !anonKey || !serviceKey || !adminEmail || !adminPassword) {
+  throw new Error('Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in environment.');
+}
 
 const anonClient = createClient(supabaseUrl, anonKey);
 const serviceClient = createClient(supabaseUrl, serviceKey);
@@ -61,8 +67,8 @@ async function runTest() {
   console.log('\n=== STEP 4: Admin logs in and views submissions ===');
   const adminClient = createClient(supabaseUrl, anonKey);
   const { data: authData, error: authErr } = await adminClient.auth.signInWithPassword({
-    email: 'shahmproject@gmail.com',
-    password: 'shah@8844!'
+    email: adminEmail,
+    password: adminPassword
   });
   if (authErr) throw authErr;
   console.log('Admin session established:', authData.user.email);

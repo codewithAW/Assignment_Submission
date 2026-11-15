@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { SubmissionForm } from '../components/student/SubmissionForm';
 import { SubmissionChecker } from '../components/student/SubmissionChecker';
+import { DEFAULT_SUBJECT } from '../services/submissionService';
+import type { SubjectAssignment } from '../types';
 
 interface StudentPortalProps {
   onNavigateToAdmin: () => void;
@@ -19,6 +21,8 @@ interface StudentPortalProps {
 export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin }) => {
   const [prefillRoll, setPrefillRoll] = useState('');
   const [prefillName, setPrefillName] = useState('');
+  const [subjects] = useState<SubjectAssignment[]>([DEFAULT_SUBJECT]);
+  const [selectedSubjectTable, setSelectedSubjectTable] = useState(DEFAULT_SUBJECT.table_name);
 
   const handleResubmitClick = (rollNumber: string, studentName?: string) => {
     setPrefillRoll(rollNumber);
@@ -51,10 +55,10 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
             </div>
             <div>
               <span className="font-bold text-sm sm:text-base text-white tracking-tight flex items-center gap-2">
-                CS421 <span className="text-slate-500 font-normal">|</span> Compiler Construction
+                Assignment Submission Portal
               </span>
               <span className="text-[11px] text-slate-400 block -mt-0.5">
-                Assignment Portal • Fall Semester
+                Multi-Subject Academic Portal
               </span>
             </div>
           </div>
@@ -82,7 +86,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
             className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-950/60 border border-cyan-500/30 text-xs font-mono text-cyan-300 shadow-lg shadow-cyan-950/40"
           >
             <Cpu className="w-3.5 h-3.5 text-cyan-400" />
-            <span>Project 2: AST Generation & Code Synthesis</span>
+            <span>All Registered Course Subjects</span>
           </motion.div>
 
           <motion.h1
@@ -93,7 +97,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
           >
             Assignment Submission{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-sky-300 to-violet-400">
-              Vault
+              Portal
             </span>
           </motion.h1>
 
@@ -103,7 +107,7 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
             transition={{ duration: 0.4, delay: 0.15 }}
             className="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto leading-relaxed"
           >
-            Submit your Compiler Construction assignment PDF report. All documents undergo
+            Submit your assignment PDF report for any subject. All documents undergo
             rigorous binary signature validation and are archived into encrypted private cloud storage.
           </motion.p>
 
@@ -129,6 +133,9 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
         {/* Section 1: Submit Assignment */}
         <section aria-labelledby="submit-heading">
           <SubmissionForm
+            subjects={subjects}
+            selectedSubjectTable={selectedSubjectTable}
+            onSelectSubject={setSelectedSubjectTable}
             prefillRollNumber={prefillRoll}
             prefillStudentName={prefillName}
             onScrollToChecker={handleScrollToChecker}
@@ -149,13 +156,18 @@ export const StudentPortal: React.FC<StudentPortalProps> = ({ onNavigateToAdmin 
 
         {/* Section 2: Check Assignment Submission */}
         <section aria-labelledby="check-heading">
-          <SubmissionChecker onResubmitClick={handleResubmitClick} />
+          <SubmissionChecker
+            subjects={subjects}
+            selectedSubjectTable={selectedSubjectTable}
+            onSelectSubject={setSelectedSubjectTable}
+            onResubmitClick={handleResubmitClick}
+          />
         </section>
 
         {/* Footer */}
         <footer className="pt-10 pb-8 border-t border-slate-800/80 text-center text-xs text-slate-500 space-y-2">
           <p>
-            Department of Computer Science • CS421: Compiler Construction
+            Assignment Submission Portal • All Subjects
           </p>
           <p className="font-mono text-slate-600">
             Secure Backend Engine Powered by Supabase PostgreSQL & Encrypted Storage

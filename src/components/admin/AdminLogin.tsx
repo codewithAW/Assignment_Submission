@@ -56,7 +56,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
             Administrator Portal
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Secure authentication for CS421 instructors and grading staff.
+            Secure authentication for course instructors and grading staff.
           </p>
         </div>
 
@@ -79,7 +79,8 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
               <input
                 type="email"
                 required
-                placeholder="shahmproject@gmail.com"
+                autoComplete="username"
+                placeholder="instructor@university.edu"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-base sm:text-sm"
@@ -99,6 +100,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({
               <input
                 type="password"
                 required
+                autoComplete="current-password"
                 placeholder="••••••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

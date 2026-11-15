@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import type { Submission } from '../../types';
 import { formatDate } from '../../utils/date';
+import { sanitizeHttpUrl } from '../../utils/security';
 import { StatusBadge, VersionBadge } from '../ui/Badge';
 
 interface SubmissionsTableProps {
@@ -58,10 +59,11 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {submissions.map((sub) => {
-              const latestFile = sub.files && sub.files.length > 0 
-                ? [...sub.files].sort((a, b) => b.version - a.version)[0] 
+              const latestFile = sub.files && sub.files.length > 0
+                ? [...sub.files].sort((a, b) => b.version - a.version)[0]
                 : null;
               const hasMultipleVersions = (sub.files?.length || 0) > 1;
+              const safeDemoUrl = sanitizeHttpUrl(sub.live_website_url);
 
               return (
                 <tr key={sub.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors">
@@ -99,15 +101,15 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
 
                   {/* Live Website */}
                   <td className="py-4 px-5">
-                    {sub.live_website_url ? (
+                    {safeDemoUrl ? (
                       <a
-                        href={sub.live_website_url}
+                        href={safeDemoUrl}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="inline-flex items-center gap-1.5 text-sky-600 dark:text-sky-400 hover:underline font-mono"
                       >
                         <Globe className="w-3.5 h-3.5" />
-                        <span className="truncate max-w-[140px]">{sub.live_website_url.replace(/^https?:\/\//, '')}</span>
+                        <span className="truncate max-w-[140px]">{safeDemoUrl.replace(/^https?:\/\//, '')}</span>
                       </a>
                     ) : (
                       <span className="text-slate-400 dark:text-slate-600">—</span>
@@ -152,9 +154,9 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                         </>
                       )}
 
-                      {sub.live_website_url && (
+                      {safeDemoUrl && (
                         <a
-                          href={sub.live_website_url}
+                          href={safeDemoUrl}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 rounded-xl transition border border-transparent hover:border-indigo-300 dark:hover:border-indigo-500/30"
@@ -186,10 +188,11 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
       {/* Mobile Responsive Card View (HCI Best Practice for Small Screens) */}
       <div className="block lg:hidden divide-y divide-slate-100 dark:divide-slate-800">
         {submissions.map((sub) => {
-          const latestFile = sub.files && sub.files.length > 0 
-            ? [...sub.files].sort((a, b) => b.version - a.version)[0] 
+          const latestFile = sub.files && sub.files.length > 0
+            ? [...sub.files].sort((a, b) => b.version - a.version)[0]
             : null;
           const hasMultipleVersions = (sub.files?.length || 0) > 1;
+          const safeDemoUrl = sanitizeHttpUrl(sub.live_website_url);
 
           return (
             <div key={sub.id} className="p-4 sm:p-5 space-y-2.5 sm:space-y-3">
@@ -247,9 +250,9 @@ export const SubmissionsTable: React.FC<SubmissionsTableProps> = ({
                   </>
                 )}
 
-                {sub.live_website_url && (
+                {safeDemoUrl && (
                   <a
-                    href={sub.live_website_url}
+                    href={safeDemoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 border border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1.5 touch-manipulation min-h-[36px]"

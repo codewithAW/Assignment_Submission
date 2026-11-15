@@ -1,5 +1,8 @@
-const url = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const secret = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const url = process.env.VITE_SUPABASE_URL || '';
+const secret = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+if (!url || !secret) {
+  throw new Error('Set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in environment.');
+}
 
 async function testSqlEndpoints() {
   const endpoints = [

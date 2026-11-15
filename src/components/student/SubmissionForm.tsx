@@ -17,13 +17,17 @@ import confetti from 'canvas-confetti';
 import { submissionService } from '../../services/submissionService';
 import { validatePDFFile } from '../../services/pdfValidator';
 import { normalizeRollNumber, isValidRollNumber } from '../../utils/rollNumber';
-import { isValidUrl } from '../../utils/security';
-import type { SubmitAssignmentResponse } from '../../types';
+import { isValidUrl, sanitizeHttpUrl, sanitizeText } from '../../utils/security';
+import type { SubmitAssignmentResponse, SubjectAssignment } from '../../types';
 import { formatFileSize } from '../../utils/date';
 import { Modal } from '../ui/Modal';
 import { ConfirmationCard } from './ConfirmationCard';
+import { SubjectSelectorBanner } from './SubjectSelectorBanner';
 
 interface SubmissionFormProps {
+  subjects: SubjectAssignment[];
+  selectedSubjectTable: string;
+  onSelectSubject: (tableName: string) => void;
   prefillRollNumber?: string;
   prefillStudentName?: string;
   onScrollToChecker?: () => void;
@@ -31,11 +35,16 @@ interface SubmissionFormProps {
 }
 
 export const SubmissionForm: React.FC<SubmissionFormProps> = ({
+  subjects,
+  selectedSubjectTable,
+  onSelectSubject,
   prefillRollNumber,
   prefillStudentName,
   onScrollToChecker,
   onSubmissionComplete,
 }) => {
+  const activeSubject =
+    subjects.find((s) => s.table_name === selectedSubjectTable) || subjects[0];
   const [studentName, setStudentName] = useState(prefillStudentName || '');
   const [rollNumber, setRollNumber] = useState(prefillRollNumber || '');
   const [liveUrl, setLiveUrl] = useState('');
@@ -110,8 +119,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
     setErrorMessage(null);
     setIsDuplicateWarning(false);
 
-    if (!studentName.trim()) {
-      setErrorMessage('Please enter your full student name.');
+    const cleanStudentName = sanitizeText(studentName, 120);
+    if (cleanStudentName.length < 2) {
+      setErrorMessage('Please enter your full student name (2–120 characters).');
       return;
     }
 
@@ -131,6 +141,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       setErrorMessage('The live website URL is invalid. Please format as https://example.com');
       return;
     }
+    const safeLiveUrl = sanitizeHttpUrl(liveUrl) || undefined;
 
     setIsSubmitting(true);
     setUploadProgress(10);
@@ -138,10 +149,12 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
     try {
       const result = await submissionService.submitAssignment(
         {
-          student_name: studentName.trim(),
+          student_name: cleanStudentName,
           roll_number: normalized,
           file: selectedFile,
-          live_website_url: liveUrl.trim() || undefined,
+          live_website_url: safeLiveUrl,
+          subject_name: activeSubject?.subject_name,
+          table_name: activeSubject?.table_name,
         },
         (progress) => {
           setUploadProgress(progress);
@@ -159,9 +172,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
 
       setSuccessData({
         ...result,
-        student_name: studentName.trim(),
+        student_name: cleanStudentName,
         roll_number: normalized,
-        live_website_url: liveUrl.trim() || undefined,
+        live_website_url: safeLiveUrl,
       });
 
       setSelectedFile(null);
@@ -187,13 +200,13 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-5 mb-5 sm:pb-6 sm:mb-6 border-b border-slate-200 dark:border-white/10 gap-3">
           <div>
             <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 text-xs font-mono font-bold uppercase tracking-wider mb-1">
-              <Sparkles className="w-3.5 h-3.5 shrink-0" /> CS421 • Assignment Submission
+              <Sparkles className="w-3.5 h-3.5 shrink-0" /> {activeSubject?.subject_name || 'All Subjects'} • Assignment Submission
             </div>
             <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white tracking-tight">
               Submit Your Assignment
             </h2>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Fill out your details and upload your genuine PDF report below.
+              Verify your selected subject, fill out your details, and upload your genuine PDF report below.
             </p>
           </div>
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] sm:text-xs font-mono text-slate-700 dark:text-slate-300 w-fit shrink-0">
@@ -249,6 +262,16 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
         </AnimatePresence>
 
         <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
+          {/* Yellow Subject Warning & Subject Selection */}
+          <SubjectSelectorBanner
+            subjects={subjects}
+            selectedTable={selectedSubjectTable}
+            onSelectSubject={onSelectSubject}
+            showYellowWarning={true}
+            label="Subject Assignment *"
+            disabled={isSubmitting}
+          />
+
           {/* Row 1: Student Name & Roll Number */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5">
             {/* Student Name */}
@@ -311,7 +334,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
               </div>
               <input
                 type="url"
-                placeholder="https://my-compiler-demo.vercel.app"
+                placeholder="https://my-project-demo.vercel.app"
                 value={liveUrl}
                 onChange={(e) => setLiveUrl(e.target.value)}
                 className="glossy-input w-full pl-10 pr-4 py-3 rounded-2xl text-base sm:text-sm"

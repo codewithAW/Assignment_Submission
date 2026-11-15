@@ -1,15 +1,73 @@
 // Supabase Edge Function: submit-assignment
-// Verifies PDF magic bytes, prevents duplicates, uploads to private storage, records versioning
+// Verifies PDF magic bytes, sanitizes text/URLs/paths, prevents duplicates, records versioning
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+function getCorsHeaders(req: Request): Record<string, string> {
+  const allowedList = (Deno.env.get("ALLOWED_ORIGIN") || "")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean);
+  const reqOrigin = req.headers.get("Origin") || "";
+  const allowOrigin =
+    allowedList.length === 0
+      ? "*"
+      : allowedList.includes(reqOrigin)
+      ? reqOrigin
+      : allowedList[0];
+
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Vary": "Origin",
+    "X-Content-Type-Options": "nosniff",
+  };
+}
+
+function sanitizeText(input: string | null | undefined, maxLen = 200): string {
+  if (!input) return "";
+  const noBidi = input.normalize("NFC").replace(/[\u200E\u200F\u202A-\u202E\u2066-\u2069]/g, "");
+  let clean = "";
+  for (let i = 0; i < noBidi.length; i++) {
+    const code = noBidi.charCodeAt(i);
+    clean += code < 0x20 || code === 0x7f ? " " : noBidi[i];
+  }
+  return clean.replace(/\s+/g, " ").trim().slice(0, maxLen).trim();
+}
+
+function sanitizeHttpUrl(raw?: string | null): string | null {
+  if (!raw || !raw.trim()) return null;
+  const trimmed = sanitizeText(raw, 2048);
+  if (!trimmed || /\s/.test(trimmed)) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (parsed.username || parsed.password || !parsed.hostname) return null;
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeFileName(name: string): string {
+  const base = (name || "Assignment.pdf").split(/[/\\]/).pop() || "Assignment.pdf";
+  const cleaned = sanitizeText(base, 160)
+    .replace(/[^a-zA-Z0-9._-]/g, "_")
+    .replace(/\.{2,}/g, ".")
+    .replace(/^\.+/, "");
+  if (!cleaned) return "Assignment.pdf";
+  return cleaned.toLowerCase().endsWith(".pdf") ? cleaned : `${cleaned.slice(0, 120)}.pdf`;
+}
+
+function generatePinCode(): string {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return (1000 + (buf[0] % 9000)).toString();
+}
 
 serve(async (req: Request) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -20,39 +78,46 @@ serve(async (req: Request) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const formData = await req.formData();
-    const studentName = (formData.get("student_name") as string)?.trim();
-    const rawRoll = (formData.get("roll_number") as string)?.trim();
-    const liveWebsiteUrl = (formData.get("live_website_url") as string)?.trim() || null;
-    const verificationCode = (formData.get("verification_code") as string)?.trim();
+    const studentName = sanitizeText(formData.get("student_name") as string, 120);
+    const rawRoll = sanitizeText(formData.get("roll_number") as string, 25);
+    const rawLiveUrl = formData.get("live_website_url") as string;
+    const verificationCode = sanitizeText(formData.get("verification_code") as string, 12);
     const file = formData.get("file") as File;
 
-    if (!studentName || !rawRoll || !file) {
+    if (!studentName || studentName.length < 2 || !rawRoll || !file) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields: student_name, roll_number, or file." }),
+        JSON.stringify({ error: "Missing or invalid required fields: student_name, roll_number, or file." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 1. Normalize roll number
     const rollNumber = rawRoll.toUpperCase().replace(/\s+/g, "-").replace(/-+/g, "-");
+    if (rollNumber.length < 4 || rollNumber.length > 25 || !/^[A-Z0-9]+([-_/][A-Z0-9]+)*$/.test(rollNumber)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid roll number format." }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // 2. Validate File Size (< 15MB)
+    let liveWebsiteUrl: string | null = null;
+    if (rawLiveUrl && rawLiveUrl.trim()) {
+      liveWebsiteUrl = sanitizeHttpUrl(rawLiveUrl);
+      if (!liveWebsiteUrl) {
+        return new Response(
+          JSON.stringify({ error: "Invalid Live Website URL. Only http:// or https:// links without credentials are allowed." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     const MAX_SIZE = 15 * 1024 * 1024;
-    if (file.size > MAX_SIZE) {
+    if (file.size > MAX_SIZE || file.size < 100) {
       return new Response(
-        JSON.stringify({ error: "File exceeds 15MB limit. Please compress the PDF." }),
+        JSON.stringify({ error: "File size must be between 100 bytes and 15MB." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (file.size < 100) {
-      return new Response(
-        JSON.stringify({ error: "File is too small to be a valid PDF document." }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // 3. Validate Extension & MIME Type
     if (!file.name.toLowerCase().endsWith(".pdf")) {
       return new Response(
         JSON.stringify({ error: "Invalid file extension. Only .pdf files are accepted." }),
@@ -60,10 +125,9 @@ serve(async (req: Request) => {
       );
     }
 
-    // 4. Server-Side Magic Bytes Verification (%PDF-)
     const fileBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(fileBuffer.slice(0, 1024));
-    const pdfSignature = [0x25, 0x50, 0x44, 0x46, 0x2d]; // %PDF-
+    const pdfSignature = [0x25, 0x50, 0x44, 0x46, 0x2d];
     let hasPdfSignature = false;
 
     for (let i = 0; i < Math.min(bytes.length - 4, 256); i++) {
@@ -82,16 +146,15 @@ serve(async (req: Request) => {
     if (!hasPdfSignature) {
       return new Response(
         JSON.stringify({
-          error: "Security validation failed: File does not contain genuine %PDF- binary header. Disguised files are rejected.",
+          error: "Security validation failed: File does not contain genuine %PDF- binary header.",
         }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // 5. Check existing submission status
     const { data: existingSub, error: fetchErr } = await supabase
       .from("submissions")
-      .select("id, status, current_version, submission_ref, verification_code_hash")
+      .select("id, status, current_version, submission_ref")
       .eq("roll_number", rollNumber)
       .maybeSingle();
 
@@ -99,11 +162,10 @@ serve(async (req: Request) => {
       throw fetchErr;
     }
 
-    // Prevent accidental duplicate submissions
     if (existingSub && existingSub.status === "submitted") {
       return new Response(
         JSON.stringify({
-          error: `Roll Number ${rollNumber} already has an active submission (${existingSub.submission_ref}). Accidental duplicate submissions are prevented. If you need modifications, please wait for instructor review.`,
+          error: `Roll Number ${rollNumber} already has an active submission (${existingSub.submission_ref}). Duplicate submissions are prevented.`,
           isDuplicate: true,
         }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -111,19 +173,19 @@ serve(async (req: Request) => {
     }
 
     let submissionId = existingSub?.id;
-    let version = existingSub ? existingSub.current_version + 1 : 1;
-    let submissionRef = existingSub ? existingSub.submission_ref : `CC-2026-${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
+    const version = existingSub ? existingSub.current_version + 1 : 1;
+    const submissionRef = existingSub
+      ? existingSub.submission_ref
+      : `SUB-${new Date().getFullYear()}-${crypto.randomUUID().slice(0, 5).toUpperCase()}`;
 
-    // Compute or verify verification code
-    const studentCode = verificationCode || `VFY-${crypto.randomUUID().slice(0, 6).toUpperCase()}`;
+    const studentCode = verificationCode || generatePinCode();
     const codeHashBuffer = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(studentCode.trim()));
     const codeHash = Array.from(new Uint8Array(codeHashBuffer))
       .map((b) => b.toString(16).padStart(2, "0"))
       .join("");
 
-    // 6. Upload PDF to private Supabase Storage bucket 'assignments'
-    const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `${rollNumber}/v${version}_${Date.now()}_${sanitizedFileName}`;
+    const safeFileName = sanitizeFileName(file.name);
+    const storagePath = `${rollNumber}/v${version}_${Date.now()}_${safeFileName}`;
 
     const { error: uploadError } = await supabase.storage
       .from("assignments")
@@ -136,11 +198,9 @@ serve(async (req: Request) => {
       throw new Error(`Storage upload failed: ${uploadError.message}`);
     }
 
-    // 7. Write to PostgreSQL database
     const nowIso = new Date().toISOString();
 
     if (existingSub) {
-      // Resubmission of rejected assignment: update submission status back to 'submitted'
       const { error: updateSubErr } = await supabase
         .from("submissions")
         .update({
@@ -151,6 +211,7 @@ serve(async (req: Request) => {
           rejected_at: null,
           rejected_by: null,
           current_version: version,
+          verification_code_hash: codeHash,
           updated_at: nowIso,
         })
         .eq("id", existingSub.id);
@@ -158,7 +219,6 @@ serve(async (req: Request) => {
       if (updateSubErr) throw updateSubErr;
       submissionId = existingSub.id;
     } else {
-      // First submission
       const { data: newSub, error: insertSubErr } = await supabase
         .from("submissions")
         .insert({
@@ -179,12 +239,11 @@ serve(async (req: Request) => {
       submissionId = newSub.id;
     }
 
-    // 8. Record in submission_files (retaining history)
     const { error: fileRecordErr } = await supabase.from("submission_files").insert({
       submission_id: submissionId,
       version: version,
       file_path: storagePath,
-      file_name: file.name,
+      file_name: safeFileName,
       file_size: file.size,
       mime_type: "application/pdf",
       uploaded_at: nowIso,
@@ -195,7 +254,7 @@ serve(async (req: Request) => {
     return new Response(
       JSON.stringify({
         success: true,
-        message: version > 1 ? "Corrected assignment uploaded successfully (v" + version + ")." : "Assignment submitted successfully.",
+        message: version > 1 ? `Corrected assignment uploaded successfully (v${version}).` : "Assignment submitted successfully.",
         submission_ref: submissionRef,
         verification_code: studentCode,
         submitted_at: nowIso,
@@ -204,11 +263,11 @@ serve(async (req: Request) => {
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
-  } catch (error: any) {
+  } catch (error) {
+    console.error("submit-assignment error:", error);
     return new Response(
-      JSON.stringify({ error: error.message || "Internal server error occurred during submission." }),
+      JSON.stringify({ error: "Internal server error occurred during submission." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
 });
-

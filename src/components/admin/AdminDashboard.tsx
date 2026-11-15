@@ -10,32 +10,49 @@ import {
   XCircle, 
   Clock, 
   ChevronLeft, 
-  ChevronRight
+  ChevronRight,
+  BookPlus,
+  BookOpen,
+  Calendar,
+  Database
 } from 'lucide-react';
 import { submissionService } from '../../services/submissionService';
-import type { Submission, StudentRosterItem, AdminUser } from '../../types';
+import type { Submission, StudentRosterItem, AdminUser, SubjectAssignment } from '../../types';
+import { formatDate } from '../../utils/date';
 import { SubmissionsTable } from './SubmissionsTable';
 import { RosterTable } from './RosterTable';
 import { RejectionModal } from './RejectionModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
 import { PdfViewerModal } from './PdfViewerModal';
+import { AssignAssignmentModal } from './AssignAssignmentModal';
 import { ToastContainer } from '../ui/Toast';
 
 interface AdminDashboardProps {
   user: AdminUser;
+  subjects: SubjectAssignment[];
+  onSubjectsChanged: () => Promise<void> | void;
   onLogout: () => void;
   onBackToPortal: () => void;
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   user,
+  subjects,
+  onSubjectsChanged,
   onLogout,
   onBackToPortal,
 }) => {
+  const [activeSubjectTable, setActiveSubjectTable] = useState<string>(
+    subjects[0]?.table_name || 'submissions'
+  );
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [roster, setRoster] = useState<StudentRosterItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+
+  const activeSubject =
+    subjects.find((s) => s.table_name === activeSubjectTable) || subjects[0];
 
   // Filters & Sorting
   const [statusFilter, setStatusFilter] = useState<'all' | 'submitted' | 'rejected' | 'roster'>('all');
@@ -63,12 +80,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }, 4500);
   };
 
-  const loadData = async (silent = false) => {
+  const loadData = async (silent = false, tableOverride?: string) => {
     if (!silent) setIsLoading(true);
     else setIsRefreshing(true);
 
+    const targetTable = tableOverride || activeSubject?.table_name || 'submissions';
+
     try {
-      const data = await submissionService.getAdminDashboardData();
+      const data = await submissionService.getAdminDashboardData(targetTable);
       setSubmissions(data.submissions);
       setRoster(data.roster);
     } catch (err: any) {
@@ -80,8 +99,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   useEffect(() => {
-    loadData();
-  }, []);
+    let cancelled = false;
+    submissionService
+      .getAdminDashboardData(activeSubjectTable)
+      .then((data) => {
+        if (!cancelled) {
+          setSubmissions(data.submissions);
+          setRoster(data.roster);
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          showToast('error', 'Failed to load dashboard data', err.message);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSubjectTable]);
+
+  const handleAssignmentCreated = async (created: SubjectAssignment) => {
+    await onSubjectsChanged();
+    setIsLoading(true);
+    setActiveSubjectTable(created.table_name);
+    setCurrentPage(1);
+    showToast(
+      'success',
+      `Assignment Assigned: ${created.subject_name}`,
+      `Supabase table "public.${created.table_name}" created successfully.`
+    );
+  };
 
   // Compute Dashboard Statistics
   const stats = useMemo(() => {
@@ -155,7 +209,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleConfirmReject = async (submissionId: string, reason: string) => {
     try {
-      const updated = await submissionService.rejectSubmission(submissionId, reason, user.email);
+      const targetTable = activeSubject?.table_name || 'submissions';
+      const updated = await submissionService.rejectSubmission(
+        submissionId,
+        reason,
+        user.email,
+        targetTable
+      );
       setSubmissions((prev) =>
         prev.map((s) => (s.id === submissionId ? { ...s, ...updated } : s))
       );
@@ -214,6 +274,66 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* Main Dashboard Container */}
       <div className="max-w-7xl mx-auto px-3.5 sm:px-6 py-5 sm:py-8 space-y-6 sm:space-y-8">
+        {/* Subject Switcher & Assign New Assignment Bar */}
+        <div className="glossy-card rounded-2xl sm:rounded-3xl p-4 sm:p-5 space-y-3.5 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1 min-w-0">
+              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-sky-600 dark:text-sky-400">
+                <BookOpen className="w-4 h-4 shrink-0" />
+                <span>Subject Assignments &amp; Tables</span>
+              </div>
+              {activeSubject && (
+                <div className="flex flex-wrap items-center gap-2 text-[11px] sm:text-xs text-slate-600 dark:text-slate-300 font-mono">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                    <Database className="w-3 h-3 text-emerald-500" />
+                    public.{activeSubject.table_name}
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">
+                    <Calendar className="w-3 h-3 text-amber-500" />
+                    Deadline: {formatDate(activeSubject.deadline)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsAssignModalOpen(true)}
+              className="glossy-btn-primary w-full sm:w-auto px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-md min-h-[42px] touch-manipulation shrink-0"
+            >
+              <BookPlus className="w-4 h-4 shrink-0" />
+              <span>Assign New Assignment</span>
+            </button>
+          </div>
+
+          {/* Scrollable Subject Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+            {subjects.map((subj) => {
+              const isSelected = subj.table_name === activeSubject?.table_name;
+              return (
+                <button
+                  key={subj.table_name}
+                  type="button"
+                  onClick={() => {
+                    if (subj.table_name !== activeSubject?.table_name) {
+                      setIsLoading(true);
+                      setActiveSubjectTable(subj.table_name);
+                      setCurrentPage(1);
+                    }
+                  }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition touch-manipulation min-h-[36px] border ${
+                    isSelected
+                      ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
+                      : 'bg-slate-100/90 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {subj.subject_name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* Metric Statistics Cards (Responsive Grid) */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
           {/* Total Submissions */}
@@ -388,7 +508,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">Synchronizing archive from Supabase...</p>
           </div>
         ) : statusFilter === 'roster' ? (
-          <RosterTable roster={roster} submissions={submissions} />
+          <RosterTable
+            roster={roster}
+            submissions={submissions}
+            subjectName={activeSubject?.subject_name}
+          />
         ) : (
           <div className="space-y-4">
             <SubmissionsTable
@@ -458,6 +582,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         onClose={() => setPreviewPdfUrl(null)}
         pdfUrl={previewPdfUrl}
         fileName={previewPdfName}
+      />
+
+      <AssignAssignmentModal
+        isOpen={isAssignModalOpen}
+        onClose={() => setIsAssignModalOpen(false)}
+        onAssignmentCreated={handleAssignmentCreated}
       />
     </div>
   );

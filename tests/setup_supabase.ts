@@ -1,7 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const secretKey = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const demoInstructorPassword = process.env.DEMO_INSTRUCTOR_PASSWORD || '';
+if (!supabaseUrl || !secretKey || !demoInstructorPassword) {
+  throw new Error('Set VITE_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and DEMO_INSTRUCTOR_PASSWORD in environment.');
+}
 const client = createClient(supabaseUrl, secretKey);
 
 async function setup() {
@@ -22,7 +26,7 @@ async function setup() {
   console.log('\n2. Creating demo instructor user in Supabase Auth...');
   const { data: user, error: uErr } = await client.auth.admin.createUser({
     email: 'instructor@compiler.edu',
-    password: 'admin123',
+    password: demoInstructorPassword,
     email_confirm: true,
     user_metadata: {
       full_name: 'Prof. Alan Turing',

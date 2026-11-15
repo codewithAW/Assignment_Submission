@@ -1,5 +1,5 @@
 -- ========================================================
--- CS421: COMPILER CONSTRUCTION ASSIGNMENT SUBMISSION PORTAL
+-- ASSIGNMENT SUBMISSION PORTAL (MULTI-SUBJECT)
 -- Complete Database Schema, Tables, Functions, and Storage RLS
 -- Run this in your Supabase Dashboard: SQL Editor -> New Query -> Run
 -- ========================================================
@@ -86,94 +86,91 @@ ALTER TABLE public.submission_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.student_roster ENABLE ROW LEVEL SECURITY;
 
--- Helper function to check if current user is an admin
+-- Helper function to check if current user is an admin (rejects anonymous sessions)
 CREATE OR REPLACE FUNCTION public.is_admin()
-RETURNS BOOLEAN AS $$
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_jwt JSONB;
+    v_email TEXT;
 BEGIN
-    RETURN (
-        auth.role() = 'service_role' OR
-        EXISTS (
-            SELECT 1 FROM public.admin_users
-            WHERE email = auth.jwt() ->> 'email'
-        )
+    v_jwt := (SELECT auth.jwt());
+    IF v_jwt IS NULL THEN
+        RETURN false;
+    END IF;
+
+    IF COALESCE(v_jwt ->> 'role', '') = 'service_role' THEN
+        RETURN true;
+    END IF;
+
+    IF COALESCE((v_jwt ->> 'is_anonymous')::boolean, false) THEN
+        RETURN false;
+    END IF;
+
+    IF (SELECT auth.uid()) IS NULL THEN
+        RETURN false;
+    END IF;
+
+    v_email := lower(trim(COALESCE(v_jwt ->> 'email', '')));
+    IF v_email = '' THEN
+        RETURN false;
+    END IF;
+
+    RETURN EXISTS (
+        SELECT 1 FROM public.admin_users
+        WHERE lower(email) = v_email
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
--- RLS Policies for submissions
+REVOKE ALL ON FUNCTION public.is_admin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_admin() TO anon, authenticated;
+
+-- Revoke direct anonymous privileges on sensitive tables (students use validated RPCs)
+REVOKE ALL ON TABLE public.submissions FROM PUBLIC, anon;
+REVOKE ALL ON TABLE public.submission_files FROM PUBLIC, anon;
+REVOKE ALL ON TABLE public.student_roster FROM PUBLIC, anon;
+REVOKE ALL ON TABLE public.admin_users FROM PUBLIC, anon;
+
+-- RLS Policies for submissions (Admin only for direct table queries)
 DROP POLICY IF EXISTS "Admins can view all submissions" ON public.submissions;
-CREATE POLICY "Admins can view all submissions"
-    ON public.submissions
-    FOR SELECT
-    TO authenticated
-    USING (public.is_admin());
-
 DROP POLICY IF EXISTS "Admins can update submissions" ON public.submissions;
-CREATE POLICY "Admins can update submissions"
-    ON public.submissions
-    FOR UPDATE
-    TO authenticated
-    USING (public.is_admin())
-    WITH CHECK (public.is_admin());
-
 DROP POLICY IF EXISTS "Allow student insertions" ON public.submissions;
-CREATE POLICY "Allow student insertions"
-    ON public.submissions
-    FOR INSERT
-    TO anon, authenticated
-    WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Allow student resubmissions" ON public.submissions;
-CREATE POLICY "Allow student resubmissions"
-    ON public.submissions
-    FOR UPDATE
-    TO anon, authenticated
-    USING (status = 'rejected')
-    WITH CHECK (status = 'submitted');
-
 DROP POLICY IF EXISTS "Service role full access on submissions" ON public.submissions;
-CREATE POLICY "Service role full access on submissions"
+DROP POLICY IF EXISTS "Admins manage submissions" ON public.submissions;
+CREATE POLICY "Admins manage submissions"
     ON public.submissions
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
+    FOR ALL
+    TO authenticated
+    USING ((SELECT public.is_admin()))
+    WITH CHECK ((SELECT public.is_admin()));
 
 -- RLS Policies for submission_files
 DROP POLICY IF EXISTS "Admins can view all submission files" ON public.submission_files;
-CREATE POLICY "Admins can view all submission files"
-    ON public.submission_files
-    FOR SELECT
-    TO authenticated
-    USING (public.is_admin());
-
 DROP POLICY IF EXISTS "Allow student file record insertion" ON public.submission_files;
-CREATE POLICY "Allow student file record insertion"
-    ON public.submission_files
-    FOR INSERT
-    TO anon, authenticated
-    WITH CHECK (true);
-
 DROP POLICY IF EXISTS "Service role full access on submission_files" ON public.submission_files;
-CREATE POLICY "Service role full access on submission_files"
+DROP POLICY IF EXISTS "Admins manage submission_files" ON public.submission_files;
+CREATE POLICY "Admins manage submission_files"
     ON public.submission_files
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
+    FOR ALL
+    TO authenticated
+    USING ((SELECT public.is_admin()))
+    WITH CHECK ((SELECT public.is_admin()));
 
 -- RLS Policies for student_roster
 DROP POLICY IF EXISTS "Admins can view roster" ON public.student_roster;
-CREATE POLICY "Admins can view roster"
-    ON public.student_roster
-    FOR SELECT
-    TO authenticated
-    USING (public.is_admin());
-
 DROP POLICY IF EXISTS "Service role full access on student_roster" ON public.student_roster;
-CREATE POLICY "Service role full access on student_roster"
+DROP POLICY IF EXISTS "Admins manage student_roster" ON public.student_roster;
+CREATE POLICY "Admins manage student_roster"
     ON public.student_roster
-    TO service_role
-    USING (true)
-    WITH CHECK (true);
+    FOR ALL
+    TO authenticated
+    USING ((SELECT public.is_admin()))
+    WITH CHECK ((SELECT public.is_admin()));
 
 -- RLS Policies for admin_users
 DROP POLICY IF EXISTS "Admins can view admin_users" ON public.admin_users;
@@ -181,45 +178,62 @@ CREATE POLICY "Admins can view admin_users"
     ON public.admin_users
     FOR SELECT
     TO authenticated
-    USING (public.is_admin());
+    USING ((SELECT public.is_admin()));
 
--- Secure RPC: Check Submission Status without exposing private files or URLs
+-- Secure RPC: Check Submission Status without exposing private files, hashes, or empty-code bypass
 CREATE OR REPLACE FUNCTION public.check_submission_secure(
     p_roll_number TEXT,
     p_code_hash TEXT
 )
-RETURNS JSON AS $$
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
 DECLARE
     v_sub RECORD;
+    v_roll TEXT;
+    v_hash TEXT;
 BEGIN
-    SELECT 
-        status, 
-        student_name, 
-        roll_number, 
-        submission_ref, 
-        current_version, 
-        created_at, 
-        rejection_reason, 
+    v_roll := UPPER(TRIM(COALESCE(p_roll_number, '')));
+    v_hash := lower(trim(COALESCE(p_code_hash, '')));
+
+    IF v_roll = '' OR NOT EXISTS (SELECT 1 FROM public.submissions WHERE roll_number = v_roll) THEN
+        RETURN json_build_object(
+            'found', false,
+            'status', 'unsubmitted',
+            'message', 'Your assignment has not been submitted yet.'
+        );
+    END IF;
+
+    IF v_hash !~ '^[a-f0-9]{64}$' THEN
+        RETURN json_build_object(
+            'found', true,
+            'invalid_code', true,
+            'message', 'Please enter the 4-digit verification code from your submission receipt.'
+        );
+    END IF;
+
+    SELECT
+        status,
+        student_name,
+        roll_number,
+        submission_ref,
+        current_version,
+        created_at,
+        rejection_reason,
         rejected_at
     INTO v_sub
     FROM public.submissions
-    WHERE roll_number = UPPER(TRIM(p_roll_number))
-      AND (verification_code_hash = p_code_hash OR p_code_hash = '');
+    WHERE roll_number = v_roll
+      AND verification_code_hash = v_hash;
 
     IF NOT FOUND THEN
-        IF EXISTS (SELECT 1 FROM public.submissions WHERE roll_number = UPPER(TRIM(p_roll_number))) THEN
-            RETURN json_build_object(
-                'found', true,
-                'invalid_code', true,
-                'message', 'Verification code does not match this roll number.'
-            );
-        ELSE
-            RETURN json_build_object(
-                'found', false,
-                'status', 'unsubmitted',
-                'message', 'Your assignment has not been submitted yet.'
-            );
-        END IF;
+        RETURN json_build_object(
+            'found', true,
+            'invalid_code', true,
+            'message', 'Verification code does not match this roll number.'
+        );
     END IF;
 
     RETURN json_build_object(
@@ -234,8 +248,9 @@ BEGIN
         'rejected_at', v_sub.rejected_at
     );
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
+REVOKE ALL ON FUNCTION public.check_submission_secure(TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.check_submission_secure(TEXT, TEXT) TO anon, authenticated;
 
 -- Storage Bucket: assignments
@@ -252,35 +267,33 @@ ON CONFLICT (id) DO UPDATE SET
     file_size_limit = 15728640,
     allowed_mime_types = ARRAY['application/pdf', 'application/x-pdf'];
 
--- Storage RLS: Allow uploads and admin downloads
+-- Storage RLS: Allow PDF uploads only and admin-only reads (replaces deprecated auth.role())
 DROP POLICY IF EXISTS "Allow student PDF uploads" ON storage.objects;
-CREATE POLICY "Allow student PDF uploads"
+DROP POLICY IF EXISTS "Students upload assignment PDFs" ON storage.objects;
+CREATE POLICY "Students upload assignment PDFs"
     ON storage.objects
     FOR INSERT
     TO anon, authenticated
-    WITH CHECK (bucket_id = 'assignments');
+    WITH CHECK (
+        bucket_id = 'assignments'
+        AND name ~* '^[a-z0-9][a-z0-9._/-]*\.pdf$'
+        AND position('..' in name) = 0
+        AND position('//' in name) = 0
+    );
 
 DROP POLICY IF EXISTS "Admins can view and download assignment files" ON storage.objects;
-CREATE POLICY "Admins can view and download assignment files"
+DROP POLICY IF EXISTS "Admins read assignment PDFs" ON storage.objects;
+CREATE POLICY "Admins read assignment PDFs"
     ON storage.objects
     FOR SELECT
     TO authenticated
     USING (
-        bucket_id = 'assignments' AND
-        (
-            auth.role() = 'service_role' OR
-            EXISTS (
-                SELECT 1 FROM public.admin_users
-                WHERE email = auth.jwt() ->> 'email'
-            )
-        )
+        bucket_id = 'assignments'
+        AND (SELECT public.is_admin())
     );
 
 DROP POLICY IF EXISTS "Service role full storage access" ON storage.objects;
-CREATE POLICY "Service role full storage access"
-    ON storage.objects
-    FOR ALL
-    TO service_role
-    USING (bucket_id = 'assignments')
-    WITH CHECK (bucket_id = 'assignments');
+
+-- Note: Also run supabase/multi_subject_setup.sql (or supabase/migrations/20261115000001_multi_subject_assignments.sql)
+-- to enable multi-subject assignments and dynamic subject table creation.
 

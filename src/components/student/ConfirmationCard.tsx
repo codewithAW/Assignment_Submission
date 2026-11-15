@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Copy, Check, Calendar, Hash, User, ExternalLink, AlertTriangle, KeyRound } from 'lucide-react';
+import { CheckCircle2, Copy, Check, Calendar, Hash, User, ExternalLink, AlertTriangle, KeyRound, BookOpen } from 'lucide-react';
 import type { SubmitAssignmentResponse } from '../../types';
 import { formatDate } from '../../utils/date';
+import { sanitizeHttpUrl } from '../../utils/security';
 
 interface ConfirmationCardProps {
   data: SubmitAssignmentResponse & {
@@ -21,6 +22,7 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
 }) => {
   const [copiedRef, setCopiedRef] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const safeDemoUrl = sanitizeHttpUrl(data.live_website_url);
 
   const copyToClipboard = (text: string, type: 'ref' | 'code') => {
     navigator.clipboard.writeText(text);
@@ -116,6 +118,14 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
 
       {/* Metadata list */}
       <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 px-3.5 sm:px-4 py-1 text-xs sm:text-sm">
+        {data.subject_name && (
+          <div className="py-2.5 flex items-center justify-between gap-2">
+            <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
+              <BookOpen className="w-3.5 h-3.5 text-sky-500" /> Subject
+            </span>
+            <span className="font-bold text-sky-700 dark:text-sky-300 text-right truncate">{data.subject_name}</span>
+          </div>
+        )}
         <div className="py-2.5 flex items-center justify-between gap-2">
           <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
             <User className="w-3.5 h-3.5" /> Student Name
@@ -134,18 +144,18 @@ export const ConfirmationCard: React.FC<ConfirmationCardProps> = ({
           </span>
           <span className="font-mono text-slate-600 dark:text-slate-300 text-right text-[11px] sm:text-xs">{formatDate(data.submitted_at)}</span>
         </div>
-        {data.live_website_url && (
+        {safeDemoUrl && (
           <div className="py-2.5 flex items-center justify-between gap-2">
             <span className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5 shrink-0">
               <ExternalLink className="w-3.5 h-3.5" /> Demo URL
             </span>
             <a
-              href={data.live_website_url}
+              href={safeDemoUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-sky-600 dark:text-sky-400 hover:underline max-w-[170px] sm:max-w-xs truncate text-right"
             >
-              {data.live_website_url}
+              {safeDemoUrl}
             </a>
           </div>
         )}

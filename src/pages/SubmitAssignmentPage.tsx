@@ -1,8 +1,12 @@
 import React from 'react';
 import { ArrowLeft, Shield, Search } from 'lucide-react';
 import { SubmissionForm } from '../components/student/SubmissionForm';
+import type { SubjectAssignment } from '../types';
 
 interface SubmitAssignmentPageProps {
+  subjects: SubjectAssignment[];
+  selectedSubjectTable: string;
+  onSelectSubject: (tableName: string) => void;
   prefillRollNumber?: string;
   prefillStudentName?: string;
   onNavigateHome: () => void;
@@ -10,6 +14,9 @@ interface SubmitAssignmentPageProps {
 }
 
 export const SubmitAssignmentPage: React.FC<SubmitAssignmentPageProps> = ({
+  subjects,
+  selectedSubjectTable,
+  onSelectSubject,
   prefillRollNumber,
   prefillStudentName,
   onNavigateHome,
@@ -37,6 +44,9 @@ export const SubmitAssignmentPage: React.FC<SubmitAssignmentPageProps> = ({
 
       {/* Primary Submission Form Component */}
       <SubmissionForm
+        subjects={subjects}
+        selectedSubjectTable={selectedSubjectTable}
+        onSelectSubject={onSelectSubject}
         prefillRollNumber={prefillRollNumber}
         prefillStudentName={prefillStudentName}
         onScrollToChecker={onNavigateToCheck}
@@ -45,14 +55,14 @@ export const SubmitAssignmentPage: React.FC<SubmitAssignmentPageProps> = ({
       {/* Security & Policy Note (HCI Rule: Reassurance without clutter) */}
       <div className="p-4 sm:p-5 rounded-2xl sm:rounded-3xl glossy-card text-xs space-y-2">
         <h4 className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2 text-xs sm:text-sm">
-          <Shield className="w-4 h-4 text-sky-500 shrink-0" /> Security & Versioning Guarantee
+          <Shield className="w-4 h-4 text-sky-500 shrink-0" /> Security &amp; Versioning Guarantee
         </h4>
         <ul className="list-disc pl-4 sm:pl-5 space-y-1 text-slate-600 dark:text-slate-400 leading-relaxed text-[11px] sm:text-xs">
           <li>
             Binary signature <code className="font-mono text-sky-600 dark:text-sky-300">%PDF-</code> is verified to protect against disguised files.
           </li>
           <li>
-            Duplicate submissions while an assignment is active are prevented.
+            Duplicate submissions while an assignment is active in that subject are prevented.
           </li>
           <li>
             If rejected by an instructor, you can upload corrected revisions (<code className="font-mono text-violet-600 dark:text-violet-300">v2, v3</code>) while retaining your history.

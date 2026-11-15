@@ -1,32 +1,45 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  Search, 
-  CheckCircle2, 
-  XCircle, 
-  HelpCircle, 
-  ArrowUpRight, 
-  Hash, 
-  Key, 
+import {
+  Search,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
+  ArrowUpRight,
+  Hash,
+  Key,
   FileCheck,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle,
 } from 'lucide-react';
 import { submissionService } from '../../services/submissionService';
 import { normalizeRollNumber, isValidRollNumber } from '../../utils/rollNumber';
-import type { CheckSubmissionResult } from '../../types';
+import type { CheckSubmissionResult, SubjectAssignment } from '../../types';
 import { formatDate } from '../../utils/date';
 import { StatusBadge, VersionBadge } from '../ui/Badge';
+import { SubjectSelectorBanner } from './SubjectSelectorBanner';
 
 interface SubmissionCheckerProps {
+  subjects: SubjectAssignment[];
+  selectedSubjectTable: string;
+  onSelectSubject: (tableName: string) => void;
   onResubmitClick: (rollNumber: string, studentName?: string) => void;
 }
 
-export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmitClick }) => {
+export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({
+  subjects,
+  selectedSubjectTable,
+  onSelectSubject,
+  onResubmitClick,
+}) => {
   const [rollNumber, setRollNumber] = useState('');
   const [verificationCode, setVerificationCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CheckSubmissionResult | null>(null);
+
+  const activeSubject =
+    subjects.find((s) => s.table_name === selectedSubjectTable) || subjects[0];
 
   const handleCheck = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,7 +56,12 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
     setIsLoading(true);
 
     try {
-      const res = await submissionService.checkSubmission(normalized, verificationCode.trim());
+      const res = await submissionService.checkSubmission(
+        normalized,
+        verificationCode.trim(),
+        activeSubject?.table_name || 'submissions',
+        activeSubject?.subject_name || 'Compiler Construction'
+      );
       setResult(res);
     } catch (err: any) {
       setError(err.message || 'Failed to verify submission status.');
@@ -64,12 +82,24 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
             Check Your Assignment Submission
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
-            Verify the real-time archival and review status of your compiler assignment.
+            Verify the real-time archival and review status of your assignment for any subject.
           </p>
         </div>
 
         {/* Input Form */}
         <form onSubmit={handleCheck} className="space-y-4">
+          <SubjectSelectorBanner
+            subjects={subjects}
+            selectedTable={selectedSubjectTable}
+            onSelectSubject={(tbl) => {
+              onSelectSubject(tbl);
+              setResult(null);
+            }}
+            showYellowWarning={false}
+            label="Subject Assignment"
+            disabled={isLoading}
+          />
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {/* Roll Number Input */}
             <div>
@@ -106,7 +136,10 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
                 </div>
                 <input
                   type="text"
+                  required
                   maxLength={6}
+                  autoComplete="one-time-code"
+                  inputMode="numeric"
                   placeholder="e.g. 4829"
                   value={verificationCode}
                   onChange={(e) => setVerificationCode(e.target.value.trim())}
@@ -159,18 +192,34 @@ export const SubmissionChecker: React.FC<SubmissionCheckerProps> = ({ onResubmit
               transition={{ duration: 0.2 }}
               className="mt-5 pt-5 sm:mt-6 sm:pt-6 border-t border-slate-200 dark:border-white/10"
             >
+              {/* Case 0: INVALID OR MISSING VERIFICATION CODE */}
+              {result.found && result.status === undefined && (
+                <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-amber-50/90 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-500/40 text-center space-y-2.5 shadow-sm">
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-amber-100 dark:bg-amber-900/60 flex items-center justify-center text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <h4 className="text-sm sm:text-base font-bold text-amber-900 dark:text-amber-100">
+                    {result.message || 'Verification code does not match this roll number.'}
+                  </h4>
+                  <p className="text-xs text-amber-800 dark:text-amber-300 max-w-md mx-auto">
+                    A submission exists for <span className="font-mono font-bold">{normalizeRollNumber(rollNumber)}</span> in{' '}
+                    <strong>{result.subject_name || activeSubject?.subject_name}</strong>. Please enter the 4-digit verification code from your submission receipt.
+                  </p>
+                </div>
+              )}
+
               {/* Case 1: NOT SUBMITTED */}
-              {(!result.found || result.status === undefined) && (
+              {!result.found && (
                 <div className="p-5 sm:p-6 rounded-2xl sm:rounded-3xl bg-slate-50 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 text-center space-y-3 shadow-sm">
                   <div className="w-12 h-12 mx-auto rounded-2xl bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-400">
                     <HelpCircle className="w-6 h-6" />
                   </div>
                   <div>
                     <h4 className="text-sm sm:text-base font-bold text-slate-900 dark:text-slate-100">
-                      Your assignment has not been submitted yet.
+                      {result.message || 'Your assignment has not been submitted yet.'}
                     </h4>
                     <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto mt-1">
-                      No active submission record was found for roll number <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{normalizeRollNumber(rollNumber)}</span>.
+                      No active submission record was found for roll number <span className="font-mono font-bold text-sky-600 dark:text-sky-400">{normalizeRollNumber(rollNumber)}</span> in <strong>{result.subject_name || activeSubject?.subject_name}</strong>.
                     </p>
                   </div>
                   <button

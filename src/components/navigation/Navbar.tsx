@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, UploadCloud, Search, Lock, Home, Sun, Moon } from 'lucide-react';
+import { BookOpen, UploadCloud, Search, Lock, Home, Sun, Moon } from 'lucide-react';
 import { useTheme } from '../../context/ThemeContext';
 
 interface NavbarProps {
@@ -23,26 +23,24 @@ export const Navbar: React.FC<NavbarProps> = ({ currentPath, onNavigate }) => {
           ======================================================== */}
       <header className="sticky top-0 z-40 glossy-nav">
         <div className="max-w-6xl mx-auto px-3.5 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2">
-          {/* Brand Logo & Course Header */}
+          {/* Brand Logo & Portal Header */}
           <button
             onClick={() => onNavigate('/')}
             className="flex items-center gap-2 sm:gap-3 text-left group transition shrink-0"
-            aria-label="CS421 Compiler Construction Home"
+            aria-label="Assignment Submission Portal Home"
           >
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-tr from-sky-400 to-indigo-600 p-0.5 shadow-md shadow-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
               <div className="w-full h-full bg-slate-900 rounded-[10px] flex items-center justify-center text-sky-400">
-                <Terminal className="w-4 h-4 sm:w-5 sm:h-5" />
+                <BookOpen className="w-4 h-4 sm:w-5 sm:h-5" />
               </div>
             </div>
             <div>
               <div className="font-bold text-xs sm:text-base text-slate-900 dark:text-white tracking-tight flex items-center gap-1 sm:gap-1.5 leading-none">
-                <span>CS421</span>
-                <span className="text-slate-300 dark:text-slate-600 font-normal">|</span>
-                <span className="hidden xs:inline sm:inline">Compiler Construction</span>
-                <span className="xs:hidden sm:hidden">Portal</span>
+                <span className="hidden xs:inline sm:inline">Assignment Submission Portal</span>
+                <span className="xs:hidden sm:hidden">Assignment Portal</span>
               </div>
               <span className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5 font-medium">
-                Assignment Vault
+                All Subjects • Academic Vault
               </span>
             </div>
           </button>

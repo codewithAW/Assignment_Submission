@@ -1,56 +1,91 @@
 import React, { useState, useEffect } from 'react';
 import { AdminLogin } from '../components/admin/AdminLogin';
 import { AdminDashboard } from '../components/admin/AdminDashboard';
-import type { AdminUser } from '../types';
+import type { AdminUser, SubjectAssignment } from '../types';
 import { submissionService } from '../services/submissionService';
 import { supabase, isSupabaseConfigured } from '../services/supabase';
 
 interface AdminPortalProps {
+  subjects: SubjectAssignment[];
+  onSubjectsChanged: () => Promise<void> | void;
   onBackToStudentPortal: () => void;
 }
 
-export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToStudentPortal }) => {
-  const [currentUser, setCurrentUser] = useState<AdminUser | null>(() => {
-    // Check localStorage for saved session in local/demo mode
-    const saved = localStorage.getItem('cc_admin_session');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch {}
-    }
-    return null;
-  });
-
+export const AdminPortal: React.FC<AdminPortalProps> = ({
+  subjects,
+  onSubjectsChanged,
+  onBackToStudentPortal,
+}) => {
+  const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Check Supabase Auth session if configured
   useEffect(() => {
+    // Purge legacy insecure localStorage admin session cache if present
+    try {
+      localStorage.removeItem('cc_admin_session');
+    } catch {}
+
+    let isMounted = true;
+
     async function checkAuth() {
-      if (isSupabaseConfigured && supabase) {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-          setCurrentUser({
-            id: session.user.id,
-            email: session.user.email || 'shahmproject@gmail.com',
-            full_name: session.user.user_metadata?.full_name || 'Administrator',
-            role: 'admin',
-          });
+      try {
+        if (isSupabaseConfigured && supabase) {
+          const verifiedUser = await submissionService.verifyAdminSession();
+          if (isMounted) {
+            setCurrentUser(verifiedUser);
+          }
+        } else if (isMounted) {
+          setCurrentUser(null);
+        }
+      } catch {
+        if (isMounted) {
+          setCurrentUser(null);
+        }
+      } finally {
+        if (isMounted) {
+          setIsCheckingAuth(false);
         }
       }
-      setIsCheckingAuth(false);
     }
+
     checkAuth();
+
+    if (!isSupabaseConfigured || !supabase) {
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event) => {
+      if (!isMounted) return;
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null);
+        return;
+      }
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        const verified = await submissionService.verifyAdminSession();
+        if (isMounted) {
+          setCurrentUser(verified);
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+    };
   }, []);
 
   const handleLoginSuccess = (user: AdminUser) => {
     setCurrentUser(user);
-    localStorage.setItem('cc_admin_session', JSON.stringify(user));
   };
 
   const handleLogout = async () => {
     await submissionService.logoutAdmin();
+    try {
+      localStorage.removeItem('cc_admin_session');
+    } catch {}
     setCurrentUser(null);
-    localStorage.removeItem('cc_admin_session');
   };
 
   if (isCheckingAuth) {
@@ -71,6 +106,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onBackToStudentPortal 
       ) : (
         <AdminDashboard
           user={currentUser}
+          subjects={subjects}
+          onSubjectsChanged={onSubjectsChanged}
           onLogout={handleLogout}
           onBackToPortal={onBackToStudentPortal}
         />

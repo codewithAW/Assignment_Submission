@@ -6,9 +6,10 @@ import { Hash } from 'lucide-react';
 interface RosterTableProps {
   roster: StudentRosterItem[];
   submissions: Submission[];
+  subjectName?: string;
 }
 
-export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions }) => {
+export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions, subjectName }) => {
   const enrichedRoster = roster.map(student => {
     const sub = submissions.find(s => s.roll_number === student.roll_number);
     return {
@@ -27,13 +28,13 @@ export const RosterTable: React.FC<RosterTableProps> = ({ roster, submissions })
       <div className="p-4 sm:p-5 bg-slate-100/80 dark:bg-slate-900/80 border-b border-slate-200 dark:border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h3 className="font-bold text-slate-900 dark:text-white text-sm sm:text-base flex items-center gap-2">
-            <span>CS421 Course Roster</span>
+            <span>Course Student Roster</span>
             <span className="text-xs font-mono px-2.5 py-0.5 rounded-full bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
               {roster.length} Enrolled
             </span>
           </h3>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Official class roster for Compiler Construction.
+            Official class roster for {subjectName || 'selected subject'}.
           </p>
         </div>
 

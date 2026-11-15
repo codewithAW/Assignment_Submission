@@ -1,14 +1,19 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const publishableKey = 'sb_publishable_Z7SmcfqvxqKiSIz4qIeP5g_TFUBz89O';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const adminEmail = process.env.ADMIN_EMAIL || '';
+const adminPassword = process.env.ADMIN_PASSWORD || '';
+if (!supabaseUrl || !publishableKey || !adminEmail || !adminPassword) {
+  throw new Error('Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in environment.');
+}
 const client = createClient(supabaseUrl, publishableKey);
 
 async function testStorageUploadAndSignedUrl() {
   console.log('1. Signing in as instructor...');
   await client.auth.signInWithPassword({
-    email: 'instructor@compiler.edu',
-    password: 'admin123',
+    email: adminEmail,
+    password: adminPassword,
   });
 
   console.log('2. Uploading test PDF to assignments bucket...');

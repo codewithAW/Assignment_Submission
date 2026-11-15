@@ -1,12 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const secretKey = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const email = process.env.ADMIN_EMAIL || '';
+const password = process.env.ADMIN_PASSWORD || '';
+if (!supabaseUrl || !secretKey || !publishableKey || !email || !password) {
+  throw new Error('Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, SUPABASE_SERVICE_ROLE_KEY, ADMIN_EMAIL, and ADMIN_PASSWORD in environment.');
+}
 const client = createClient(supabaseUrl, secretKey);
 
 async function setupNewAdmin() {
-  const email = 'shahmproject@gmail.com';
-  const password = 'shah@8844!';
 
   console.log(`Setting up admin user: ${email}...`);
 
@@ -41,7 +45,7 @@ async function setupNewAdmin() {
 
   // Now test logging in with the publishable key
   console.log('\nTesting sign-in with publishable key...');
-  const pubClient = createClient(supabaseUrl, 'sb_publishable_Z7SmcfqvxqKiSIz4qIeP5g_TFUBz89O');
+  const pubClient = createClient(supabaseUrl, publishableKey);
   const { data: signInData, error: signInErr } = await pubClient.auth.signInWithPassword({
     email,
     password,

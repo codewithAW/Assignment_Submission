@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import type { Submission } from '../../types';
+import { sanitizeText } from '../../utils/security';
 import { Modal } from '../ui/Modal';
 
 interface RejectionModalProps {
@@ -27,7 +28,7 @@ export const RejectionModal: React.FC<RejectionModalProps> = ({
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await onConfirmReject(submission.id, reason.trim());
+      await onConfirmReject(submission.id, sanitizeText(reason, 1000, true));
       onClose();
     } catch (err) {
       console.error('Failed to reject submission:', err);

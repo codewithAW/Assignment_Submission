@@ -1,7 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const secretKey = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+if (!supabaseUrl || !secretKey) {
+  throw new Error('Set VITE_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in environment.');
+}
 const client = createClient(supabaseUrl, secretKey);
 
 async function inspectSchema() {

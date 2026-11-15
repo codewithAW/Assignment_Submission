@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = 'https://fmydejwnqxwiimvjuyno.supabase.co';
-const publishableKey = 'sb_publishable_Z7SmcfqvxqKiSIz4qIeP5g_TFUBz89O';
-const secretKey = 'sb_secret_4IFGnMdIC_8nD9cBw0ViDA_Hp7pkWFO';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
+const publishableKey = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+if (!supabaseUrl || !publishableKey || !secretKey) {
+  throw new Error('Set VITE_SUPABASE_URL, VITE_SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY in environment.');
+}
 
 async function testConnection() {
   console.log('Testing connection to Supabase:', supabaseUrl);

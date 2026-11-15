@@ -1,5 +1,16 @@
 export type SubmissionStatus = 'submitted' | 'rejected';
 
+export interface SubjectAssignment {
+  id: string;
+  subject_name: string;
+  table_name: string;
+  deadline: string;
+  created_by?: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at?: string;
+}
+
 export interface SubmissionFile {
   id: string;
   submission_id: string;
@@ -18,12 +29,15 @@ export interface Submission {
   student_name: string;
   live_website_url?: string | null;
   submission_ref: string;
-  verification_code_hash: string;
+  verification_code_hash?: string;
   status: SubmissionStatus;
   rejection_reason?: string | null;
   rejected_at?: string | null;
   rejected_by?: string | null;
   current_version: number;
+  file_path?: string | null;
+  file_name?: string | null;
+  file_size?: number | null;
   created_at: string;
   updated_at: string;
   files?: SubmissionFile[];
@@ -46,10 +60,12 @@ export interface AdminUser {
 
 export interface CheckSubmissionResult {
   found: boolean;
+  invalid_code?: boolean;
   status?: SubmissionStatus;
   student_name?: string;
   roll_number?: string;
   submission_ref?: string;
+  subject_name?: string;
   version?: number;
   submitted_at?: string;
   rejection_reason?: string | null;
@@ -62,6 +78,8 @@ export interface SubmitAssignmentPayload {
   roll_number: string;
   file: File;
   live_website_url?: string;
+  subject_name?: string;
+  table_name?: string;
 }
 
 export interface SubmitAssignmentResponse {
@@ -72,5 +90,7 @@ export interface SubmitAssignmentResponse {
   submitted_at?: string;
   version?: number;
   is_resubmission?: boolean;
+  subject_name?: string;
+  table_name?: string;
 }
 

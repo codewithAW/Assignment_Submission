@@ -1,18 +1,38 @@
-import type { 
-  Submission, 
-  SubmissionFile, 
-  StudentRosterItem, 
-  CheckSubmissionResult, 
-  SubmitAssignmentPayload, 
+import type {
+  Submission,
+  SubmissionFile,
+  StudentRosterItem,
+  CheckSubmissionResult,
+  SubmitAssignmentPayload,
   SubmitAssignmentResponse,
-  AdminUser
+  SubjectAssignment,
+  AdminUser,
 } from '../types';
 import { supabase, isSupabaseConfigured } from './supabase';
 import { validatePDFFile } from './pdfValidator';
 import { normalizeRollNumber, isValidRollNumber } from '../utils/rollNumber';
-import { generateSubmissionRef, generateVerificationCode, sha256, isValidUrl } from '../utils/security';
+import {
+  generateSubmissionRef,
+  generateVerificationCode,
+  sha256,
+  isValidUrl,
+  sanitizeHttpUrl,
+  sanitizeText,
+  sanitizeFileName,
+  subjectNameToTableName,
+} from '../utils/security';
 
-// Default CS421: Compiler Construction Instructor Roster
+export const DEFAULT_SUBJECT: SubjectAssignment = {
+  id: 'default-submissions',
+  subject_name: 'Compiler Construction',
+  table_name: 'submissions',
+  deadline: '2026-12-31T23:59:00.000Z',
+  created_by: 'shahmproject@gmail.com',
+  is_active: true,
+  created_at: '2026-11-03T00:00:00.000Z',
+};
+
+// Default Student Roster (used when local offline test mode is active)
 export const DEFAULT_ROSTER: StudentRosterItem[] = [
   { roll_number: 'FA21-BCS-001', student_name: 'Alexander Vance', email: 'avance@cs.edu' },
   { roll_number: 'FA21-BCS-014', student_name: 'Sophia Chen', email: 'schen@cs.edu' },
@@ -26,16 +46,44 @@ export const DEFAULT_ROSTER: StudentRosterItem[] = [
   { roll_number: 'FA21-BCS-125', student_name: 'Rohan Sharma', email: 'rsharma@cs.edu' },
 ];
 
-// Local test persistence keys
-const STORAGE_KEY_SUBMISSIONS = 'cc_portal_submissions_v1';
-const STORAGE_KEY_FILES = 'cc_portal_files_v1';
+// Local offline test persistence keys (only used when Supabase is NOT configured)
+const STORAGE_KEY_SUBJECTS = 'asp_portal_subjects_v1';
 const STORAGE_KEY_ROSTER = 'cc_portal_roster_v1';
 
-// Seed default initial submissions for demo/testing when no submissions exist
-function initializeLocalData(): { submissions: Submission[]; files: SubmissionFile[]; roster: StudentRosterItem[] } {
+function getLocalSubmissionKey(tableName: string): string {
+  return tableName === 'submissions' ? 'cc_portal_submissions_v1' : `asp_portal_subs_${tableName}_v1`;
+}
+
+function getLocalFilesKey(tableName: string): string {
+  return tableName === 'submissions' ? 'cc_portal_files_v1' : `asp_portal_files_${tableName}_v1`;
+}
+
+function initializeLocalSubjects(): SubjectAssignment[] {
   try {
-    const rawSubs = localStorage.getItem(STORAGE_KEY_SUBMISSIONS);
-    const rawFiles = localStorage.getItem(STORAGE_KEY_FILES);
+    const raw = localStorage.getItem(STORAGE_KEY_SUBJECTS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch {}
+  const initial = [DEFAULT_SUBJECT];
+  try {
+    localStorage.setItem(STORAGE_KEY_SUBJECTS, JSON.stringify(initial));
+  } catch {}
+  return initial;
+}
+
+function initializeLocalData(tableName = 'submissions'): {
+  submissions: Submission[];
+  files: SubmissionFile[];
+  roster: StudentRosterItem[];
+} {
+  const subsKey = getLocalSubmissionKey(tableName);
+  const filesKey = getLocalFilesKey(tableName);
+
+  try {
+    const rawSubs = localStorage.getItem(subsKey);
+    const rawFiles = localStorage.getItem(filesKey);
     const rawRoster = localStorage.getItem(STORAGE_KEY_ROSTER);
 
     if (rawSubs && rawFiles) {
@@ -49,7 +97,10 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
     console.error('Error reading local storage', e);
   }
 
-  // Pre-seed 2 sample submissions for demo
+  if (tableName !== 'submissions') {
+    return { submissions: [], files: [], roster: DEFAULT_ROSTER };
+  }
+
   const initialSubs: Submission[] = [
     {
       id: 'sub-demo-1',
@@ -57,7 +108,7 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
       student_name: 'Sophia Chen',
       live_website_url: 'https://compiler-lex.demo.dev',
       submission_ref: 'CC-2026-SC01',
-      verification_code_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08', // "test"
+      verification_code_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
       status: 'submitted',
       current_version: 1,
       created_at: new Date(Date.now() - 3600000 * 4).toISOString(),
@@ -71,13 +122,13 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
       submission_ref: 'CC-2026-ER42',
       verification_code_hash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
       status: 'rejected',
-      rejection_reason: 'Missing Abstract Syntax Tree (AST) visualization section in the report. Please include grammar definitions and test coverage analysis.',
+      rejection_reason: 'Missing sections in the report. Please review requirements and submit an updated version.',
       rejected_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-      rejected_by: 'instructor@compiler.edu',
+      rejected_by: 'shahmproject@gmail.com',
       current_version: 1,
       created_at: new Date(Date.now() - 3600000 * 8).toISOString(),
       updated_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-    }
+    },
   ];
 
   const initialFiles: SubmissionFile[] = [
@@ -86,7 +137,7 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
       submission_id: 'sub-demo-1',
       version: 1,
       file_path: 'FA21-BCS-014/v1_ast_compiler_report.pdf',
-      file_name: 'Sophia_Chen_Compiler_Report.pdf',
+      file_name: 'Sophia_Chen_Report.pdf',
       file_size: 1420500,
       mime_type: 'application/pdf',
       uploaded_at: new Date(Date.now() - 3600000 * 4).toISOString(),
@@ -100,12 +151,12 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
       file_size: 2150000,
       mime_type: 'application/pdf',
       uploaded_at: new Date(Date.now() - 3600000 * 8).toISOString(),
-    }
+    },
   ];
 
   try {
-    localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(initialSubs));
-    localStorage.setItem(STORAGE_KEY_FILES, JSON.stringify(initialFiles));
+    localStorage.setItem(subsKey, JSON.stringify(initialSubs));
+    localStorage.setItem(filesKey, JSON.stringify(initialFiles));
     localStorage.setItem(STORAGE_KEY_ROSTER, JSON.stringify(DEFAULT_ROSTER));
   } catch {}
 
@@ -116,23 +167,170 @@ function initializeLocalData(): { submissions: Submission[]; files: SubmissionFi
   };
 }
 
-// In-memory / browser blob store for simulated files
+// In-memory blob store for offline test previews
 const localBlobStore = new Map<string, Blob>();
+
+function isMissingSqlObjectError(err: any): boolean {
+  if (!err) return false;
+  const code = String(err.code || '').toUpperCase();
+  const msg = String(err.message || '').toLowerCase();
+  return (
+    code === 'PGRST202' ||
+    code === 'PGRST205' ||
+    code === '42883' ||
+    code === '42P01' ||
+    msg.includes('could not find the table') ||
+    msg.includes('could not find the function') ||
+    msg.includes('does not exist')
+  );
+}
+
+function createMigrationRequiredError(detail?: string): Error {
+  const err = new Error(
+    detail ||
+      'Multi-subject database setup has not been applied to Supabase yet. Run supabase/multi_subject_setup.sql in Supabase SQL Editor.'
+  ) as Error & { code?: string };
+  err.code = 'MIGRATION_REQUIRED';
+  return err;
+}
+
+function normalizeSubmissionRow(row: any): Submission {
+  let files: SubmissionFile[] = [];
+  if (Array.isArray(row?.files) && row.files.length > 0) {
+    files = [...row.files].sort((a, b) => (b.version || 0) - (a.version || 0));
+  } else if (row?.file_path) {
+    files = [
+      {
+        id: `${row.id}-v${row.current_version || 1}`,
+        submission_id: row.id,
+        version: row.current_version || 1,
+        file_path: row.file_path,
+        file_name: row.file_name || 'Assignment.pdf',
+        file_size: Number(row.file_size || 0),
+        mime_type: 'application/pdf',
+        uploaded_at: row.updated_at || row.created_at,
+      },
+    ];
+  }
+  return {
+    ...row,
+    files,
+  } as Submission;
+}
 
 export const submissionService = {
   /**
-   * Submit or resubmit an assignment
+   * Fetch all registered subject assignments and deadlines
+   */
+  async getSubjects(): Promise<{ subjects: SubjectAssignment[]; migrationRequired: boolean }> {
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase
+        .from('subject_assignments')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: true });
+
+      if (!error) {
+        const list = (data as SubjectAssignment[]) || [];
+        return {
+          subjects: list.length > 0 ? list : [DEFAULT_SUBJECT],
+          migrationRequired: false,
+        };
+      }
+
+      if (isMissingSqlObjectError(error)) {
+        return {
+          subjects: [DEFAULT_SUBJECT],
+          migrationRequired: true,
+        };
+      }
+
+      throw new Error(error.message || 'Failed to load subject assignments from Supabase.');
+    }
+
+    return {
+      subjects: initializeLocalSubjects(),
+      migrationRequired: false,
+    };
+  },
+
+  /**
+   * Admin: Assign a new subject assignment and dynamically create a Supabase table for that subject
+   */
+  async createSubjectAssignment(subjectName: string, deadline: string): Promise<SubjectAssignment> {
+    const cleanName = sanitizeText(subjectName, 100);
+    if (cleanName.length < 2) {
+      throw new Error('Subject name must be at least 2 characters.');
+    }
+
+    const parsedDate = new Date(deadline);
+    if (!deadline || Number.isNaN(parsedDate.getTime())) {
+      throw new Error('Please choose a valid assignment deadline date and time.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.rpc('create_subject_assignment', {
+        p_subject_name: cleanName,
+        p_deadline: parsedDate.toISOString(),
+      });
+
+      if (error) {
+        if (isMissingSqlObjectError(error)) {
+          throw createMigrationRequiredError(
+            'Database function create_subject_assignment() is not installed in Supabase yet. Copy & run the multi-subject SQL setup script in Supabase Dashboard -> SQL Editor.'
+          );
+        }
+        throw new Error(error.message || 'Failed to create subject table in Supabase.');
+      }
+
+      return data as SubjectAssignment;
+    }
+
+    // Offline local simulation only when Supabase is not configured
+    const existing = initializeLocalSubjects();
+    const tableName = subjectNameToTableName(cleanName);
+    if (!tableName) {
+      throw new Error('Subject name must contain letters or numbers.');
+    }
+
+    if (
+      existing.some(
+        (s) => s.subject_name.toLowerCase() === cleanName.toLowerCase() || s.table_name === tableName
+      )
+    ) {
+      throw new Error(`An assignment for subject "${cleanName}" already exists.`);
+    }
+
+    const created: SubjectAssignment = {
+      id: `subj-${Date.now()}`,
+      subject_name: cleanName,
+      table_name: tableName,
+      deadline: parsedDate.toISOString(),
+      created_by: 'local-admin',
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+
+    const next = [...existing, created];
+    localStorage.setItem(STORAGE_KEY_SUBJECTS, JSON.stringify(next));
+    return created;
+  },
+
+  /**
+   * Submit or resubmit an assignment to the selected subject's Supabase table
    */
   async submitAssignment(
-    payload: SubmitAssignmentPayload, 
+    payload: SubmitAssignmentPayload,
     onProgress?: (percent: number) => void
   ): Promise<SubmitAssignmentResponse> {
-    const studentName = payload.student_name.trim();
-    const rollNumber = normalizeRollNumber(payload.roll_number);
+    const studentName = sanitizeText(payload.student_name, 120);
+    const rollNumber = normalizeRollNumber(sanitizeText(payload.roll_number, 25));
+    const tableName = sanitizeText(payload.table_name || 'submissions', 48) || 'submissions';
+    const subjectName = sanitizeText(payload.subject_name || 'Compiler Construction', 100) || 'Compiler Construction';
 
     // 1. Validation checks
-    if (!studentName) {
-      throw new Error('Student name is required.');
+    if (studentName.length < 2) {
+      throw new Error('Student name must be between 2 and 120 characters.');
     }
 
     const rollCheck = isValidRollNumber(rollNumber);
@@ -144,9 +342,11 @@ export const submissionService = {
       throw new Error('Please select an assignment PDF file to upload.');
     }
 
-    if (payload.live_website_url && !isValidUrl(payload.live_website_url)) {
-      throw new Error('Invalid Live Website URL. Please include http:// or https://');
+    if (payload.live_website_url?.trim() && !isValidUrl(payload.live_website_url)) {
+      throw new Error('Invalid Live Website URL. Only http:// or https:// links without credentials are allowed.');
     }
+    const safeLiveUrl = sanitizeHttpUrl(payload.live_website_url);
+    const safeFileName = sanitizeFileName(payload.file.name);
 
     // 2. Binary PDF Validation (%PDF- signature, mime, size)
     onProgress?.(15);
@@ -157,184 +357,106 @@ export const submissionService = {
 
     onProgress?.(35);
 
-    // 3. First priority: Server-Side API endpoint (/api/submit)
-    // Runs secure server-side validations, duplicate prevention, and writes directly to Supabase
-    try {
-      const formData = new FormData();
-      formData.append('student_name', studentName);
-      formData.append('roll_number', rollNumber);
-      if (payload.live_website_url?.trim()) {
-        formData.append('live_website_url', payload.live_website_url.trim());
-      }
-      formData.append('file', payload.file);
+    // 3. Live Supabase Path
+    if (isSupabaseConfigured && supabase) {
+      let version = 1;
+      let submissionRef = generateSubmissionRef();
 
-      onProgress?.(55);
-
-      const apiRes = await fetch('/api/submit', {
-        method: 'POST',
-        body: formData,
+      // Step A: Pre-check duplicate BEFORE uploading PDF to private bucket
+      const { data: checkData, error: checkErr } = await supabase.rpc('check_subject_roll_exists', {
+        p_table_name: tableName,
+        p_roll_number: rollNumber,
       });
 
-      if (apiRes.ok) {
-        const result = (await apiRes.json()) as SubmitAssignmentResponse;
-        onProgress?.(100);
-        return result;
-      }
-
-      // If server returned 409 (duplicate active submission) or 400 (validation error), throw it directly
-      if (apiRes.status === 409 || apiRes.status === 400) {
-        const errJson = await apiRes.json().catch(() => ({}));
-        throw new Error(errJson.error || 'Submission was rejected by the server.');
-      }
-    } catch (apiErr: any) {
-      if (
-        apiErr.message?.includes('already has an active submission') ||
-        apiErr.message?.includes('Duplicate submissions') ||
-        apiErr.message?.includes('Security rejection') ||
-        apiErr.message?.includes('Missing required fields')
-      ) {
-        throw apiErr;
-      }
-      console.warn('API /api/submit route not reachable, trying direct Supabase write:', apiErr?.message);
-    }
-
-    // 4. Second priority: Direct Supabase Client Write
-    if (isSupabaseConfigured && supabase) {
-      try {
-        // First check existing submission in Supabase
-        const { data: existingSub, error: fetchErr } = await supabase
-          .from('submissions')
-          .select('id, status, current_version, submission_ref, verification_code_hash')
-          .eq('roll_number', rollNumber)
-          .maybeSingle();
-
-        if (fetchErr && fetchErr.code !== 'PGRST116') {
-          console.warn('Supabase query error:', fetchErr);
-        }
-
-        // Prevent accidental duplicate submissions
-        if (existingSub && existingSub.status === 'submitted') {
+      if (!checkErr && checkData) {
+        if (checkData.exists && checkData.status === 'submitted') {
           throw new Error(
-            `Roll number ${rollNumber} already has an active submission (${existingSub.submission_ref}). ` +
-            `Duplicate submissions are prevented. Please wait for the instructor to review your assignment.`
+            `Roll number ${rollNumber} already has an active submission (${checkData.submission_ref}) for ${subjectName}. Duplicate submissions are prevented.`
           );
         }
-
-        onProgress?.(70);
-
-        const version = existingSub ? existingSub.current_version + 1 : 1;
-        const submissionRef = existingSub?.submission_ref || generateSubmissionRef();
-        const verificationCode = generateVerificationCode();
-        const codeHash = await sha256(verificationCode);
-        const nowIso = new Date().toISOString();
-
-        // Upload to private Supabase storage bucket 'assignments'
-        const sanitizedFileName = payload.file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-        const storagePath = `${rollNumber}/v${version}_${Date.now()}_${sanitizedFileName}`;
-
-        const { error: uploadErr } = await supabase.storage
-          .from('assignments')
-          .upload(storagePath, payload.file, {
-            contentType: 'application/pdf',
-            upsert: false,
-          });
-
-        if (uploadErr) {
-          throw new Error(`Failed to upload PDF to secure storage: ${uploadErr.message}`);
+        if (checkData.exists) {
+          version = Number(checkData.current_version || 1) + 1;
+          submissionRef = checkData.submission_ref || submissionRef;
         }
-
-        onProgress?.(85);
-
-        let submissionId = existingSub?.id;
-        if (existingSub) {
-          // Resubmission of rejected assignment
-          const { error: updateErr } = await supabase
-            .from('submissions')
-            .update({
-              student_name: studentName,
-              live_website_url: payload.live_website_url?.trim() || null,
-              status: 'submitted',
-              rejection_reason: null,
-              rejected_at: null,
-              rejected_by: null,
-              current_version: version,
-              verification_code_hash: codeHash,
-              updated_at: nowIso,
-            })
-            .eq('id', existingSub.id);
-
-          if (updateErr) throw updateErr;
-        } else {
-          // New submission
-          const { data: newSub, error: insertErr } = await supabase
-            .from('submissions')
-            .insert({
-              roll_number: rollNumber,
-              student_name: studentName,
-              live_website_url: payload.live_website_url?.trim() || null,
-              submission_ref: submissionRef,
-              verification_code_hash: codeHash,
-              status: 'submitted',
-              current_version: 1,
-              created_at: nowIso,
-              updated_at: nowIso,
-            })
-            .select('id')
-            .single();
-
-          if (insertErr) throw insertErr;
-          submissionId = newSub.id;
-        }
-
-        // Record file entry
-        const { error: fileErr } = await supabase
-          .from('submission_files')
-          .insert({
-            submission_id: submissionId,
-            version: version,
-            file_path: storagePath,
-            file_name: payload.file.name,
-            file_size: payload.file.size,
-            mime_type: 'application/pdf',
-            uploaded_at: nowIso,
-          });
-
-        if (fileErr) throw fileErr;
-
-        onProgress?.(100);
-
-        return {
-          success: true,
-          message: version > 1 
-            ? `Corrected assignment version ${version} submitted successfully!` 
-            : 'Assignment submitted successfully!',
-          submission_ref: submissionRef,
-          verification_code: verificationCode,
-          submitted_at: nowIso,
-          version: version,
-          is_resubmission: version > 1,
-        };
-      } catch (err: any) {
-        console.error('Supabase submission write error:', err);
-        // Do NOT silently fall back to local storage if Supabase is configured!
-        throw new Error(
-          `Supabase submission failed: ${err?.message || 'Database error'}. ` +
-          `Please check that Supabase storage & RLS policies are applied.`
-        );
+      } else if (isMissingSqlObjectError(checkErr)) {
+        throw createMigrationRequiredError();
+      } else if (checkErr) {
+        throw new Error(checkErr.message || 'Failed to verify existing submission status.');
       }
+
+      onProgress?.(60);
+
+      const verificationCode = generateVerificationCode();
+      const codeHash = await sha256(verificationCode);
+      const nowIso = new Date().toISOString();
+
+      // Step B: Upload PDF to private Supabase storage bucket 'assignments'
+      const storagePath =
+        tableName === 'submissions'
+          ? `${rollNumber}/v${version}_${Date.now()}_${safeFileName}`
+          : `${tableName}/${rollNumber}/v${version}_${Date.now()}_${safeFileName}`;
+
+      const { error: uploadErr } = await supabase.storage
+        .from('assignments')
+        .upload(storagePath, payload.file, {
+          contentType: 'application/pdf',
+          upsert: false,
+        });
+
+      if (uploadErr) {
+        throw new Error(`Failed to upload PDF to secure storage: ${uploadErr.message}`);
+      }
+
+      onProgress?.(85);
+
+      // Step C: Write record exclusively through validated PostgreSQL RPC
+      const { data: rpcRes, error: submitErr } = await supabase.rpc('submit_to_subject_table', {
+        p_table_name: tableName,
+        p_roll_number: rollNumber,
+        p_student_name: studentName,
+        p_live_website_url: safeLiveUrl,
+        p_submission_ref: submissionRef,
+        p_code_hash: codeHash,
+        p_file_path: storagePath,
+        p_file_name: safeFileName,
+        p_file_size: payload.file.size,
+      });
+
+      if (submitErr || !rpcRes) {
+        if (isMissingSqlObjectError(submitErr)) {
+          throw createMigrationRequiredError();
+        }
+        throw new Error(submitErr?.message || 'Database submission failed.');
+      }
+
+      onProgress?.(100);
+      const finalVersion = Number(rpcRes.version ?? version);
+      return {
+        success: true,
+        message:
+          finalVersion > 1
+            ? `Corrected assignment version ${finalVersion} submitted for ${subjectName}!`
+            : `Assignment submitted successfully for ${subjectName}!`,
+        submission_ref: rpcRes.submission_ref || submissionRef,
+        verification_code: verificationCode,
+        submitted_at: rpcRes.submitted_at || nowIso,
+        version: finalVersion,
+        is_resubmission: Boolean(rpcRes.is_resubmission ?? finalVersion > 1),
+        subject_name: subjectName,
+        table_name: tableName,
+      };
     }
 
-    // 4. Local Test Mode (Simulated secure database & private bucket)
-    await new Promise((r) => setTimeout(r, 600)); // Simulate realistic server latency
+    // 4. Local Offline Test Mode (when Supabase is NOT configured)
+    await new Promise((r) => setTimeout(r, 500));
     onProgress?.(60);
 
-    const { submissions, files } = initializeLocalData();
-    const existingIndex = submissions.findIndex(s => s.roll_number === rollNumber);
+    const { submissions, files } = initializeLocalData(tableName);
+    const existingIndex = submissions.findIndex((s) => s.roll_number === rollNumber);
 
     if (existingIndex !== -1 && submissions[existingIndex].status === 'submitted') {
       throw new Error(
-        `Roll number ${rollNumber} already has an active submission (${submissions[existingIndex].submission_ref}). ` +
-        `Accidental duplicate submissions are prevented. Please wait for your instructor to review.`
+        `Roll number ${rollNumber} already has an active submission (${submissions[existingIndex].submission_ref}) for ${subjectName}.`
       );
     }
 
@@ -348,17 +470,16 @@ export const submissionService = {
     const nowIso = new Date().toISOString();
 
     const submissionId = existing ? existing.id : `sub-${Date.now()}`;
-    const storagePath = `${rollNumber}/v${version}_${Date.now()}_${payload.file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+    const storagePath = `${tableName}/${rollNumber}/v${version}_${Date.now()}_${safeFileName}`;
 
-    // Store file in local blob store for viewing/downloading
     localBlobStore.set(storagePath, payload.file);
 
     const fileRecord: SubmissionFile = {
       id: `file-${Date.now()}`,
       submission_id: submissionId,
-      version: version,
+      version,
       file_path: storagePath,
-      file_name: payload.file.name,
+      file_name: safeFileName,
       file_size: payload.file.size,
       mime_type: 'application/pdf',
       uploaded_at: nowIso,
@@ -366,149 +487,127 @@ export const submissionService = {
 
     if (isResubmission && existing) {
       existing.student_name = studentName;
-      existing.live_website_url = payload.live_website_url?.trim() || null;
+      existing.live_website_url = safeLiveUrl;
       existing.status = 'submitted';
       existing.rejection_reason = null;
       existing.rejected_at = null;
       existing.rejected_by = null;
       existing.current_version = version;
       existing.updated_at = nowIso;
-      // update verification code hash so student can use new or old code
       existing.verification_code_hash = codeHash;
     } else {
-      const newSubmission: Submission = {
+      submissions.unshift({
         id: submissionId,
         roll_number: rollNumber,
         student_name: studentName,
-        live_website_url: payload.live_website_url?.trim() || null,
+        live_website_url: safeLiveUrl,
         submission_ref: submissionRef,
         verification_code_hash: codeHash,
         status: 'submitted',
         current_version: 1,
         created_at: nowIso,
         updated_at: nowIso,
-      };
-      submissions.unshift(newSubmission);
+      });
     }
 
     files.unshift(fileRecord);
 
     try {
-      localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(submissions));
-      localStorage.setItem(STORAGE_KEY_FILES, JSON.stringify(files));
+      localStorage.setItem(getLocalSubmissionKey(tableName), JSON.stringify(submissions));
+      localStorage.setItem(getLocalFilesKey(tableName), JSON.stringify(files));
     } catch {}
 
     onProgress?.(100);
 
     return {
       success: true,
-      message: version > 1 
-        ? `Corrected assignment version ${version} uploaded successfully!` 
-        : 'Assignment submitted successfully!',
+      message:
+        version > 1
+          ? `Corrected assignment version ${version} uploaded for ${subjectName}!`
+          : `Assignment submitted successfully for ${subjectName}!`,
       submission_ref: submissionRef,
       verification_code: verificationCode,
       submitted_at: nowIso,
-      version: version,
+      version,
       is_resubmission: version > 1,
+      subject_name: subjectName,
+      table_name: tableName,
     };
   },
 
   /**
-   * Check assignment submission status
-   * Secure: only returns status, name, ref, timestamp, rejection reason.
-   * Never exposes file URLs to unauthenticated users.
+   * Check assignment submission status inside the selected subject table
    */
-  async checkSubmission(rollNumberInput: string, verificationCode?: string): Promise<CheckSubmissionResult> {
-    const rollNumber = normalizeRollNumber(rollNumberInput);
+  async checkSubmission(
+    rollNumberInput: string,
+    verificationCode?: string,
+    tableName = 'submissions',
+    subjectName = 'Compiler Construction'
+  ): Promise<CheckSubmissionResult> {
+    const rollNumber = normalizeRollNumber(sanitizeText(rollNumberInput, 25));
     if (!rollNumber) {
       throw new Error('Please enter your roll number.');
     }
 
-    // Live Supabase check
-    if (isSupabaseConfigured && supabase) {
-      try {
-        let codeHash = '';
-        if (verificationCode?.trim()) {
-          codeHash = await sha256(verificationCode.trim());
-        }
+    const cleanCode = sanitizeText(verificationCode, 12);
+    if (!cleanCode) {
+      throw new Error('Please enter the 4-digit verification code from your submission receipt.');
+    }
+    const codeHash = await sha256(cleanCode);
 
-        // Try the Postgres RPC function
-        const { data, error } = await supabase.rpc('check_submission_secure', {
+    // Live Supabase check exclusively via SECURITY DEFINER RPC (never query raw table / hash directly)
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.rpc('check_subject_submission_secure', {
+        p_table_name: tableName,
+        p_roll_number: rollNumber,
+        p_code_hash: codeHash,
+      });
+
+      if (!error && data) {
+        return {
+          ...(data as CheckSubmissionResult),
+          subject_name: subjectName,
+        };
+      }
+
+      if (isMissingSqlObjectError(error) && tableName === 'submissions') {
+        const { data: legacyRpcData, error: legacyRpcErr } = await supabase.rpc('check_submission_secure', {
           p_roll_number: rollNumber,
           p_code_hash: codeHash,
         });
 
-        if (!error && data) {
-          return data as CheckSubmissionResult;
-        }
-
-        // Fallback direct query if RPC not yet created in user database
-        const { data: sub, error: queryErr } = await supabase
-          .from('submissions')
-          .select('id, roll_number, student_name, submission_ref, status, current_version, created_at, rejection_reason, rejected_at, verification_code_hash')
-          .eq('roll_number', rollNumber)
-          .maybeSingle();
-
-        if (queryErr) throw queryErr;
-
-        if (!sub) {
+        if (!legacyRpcErr && legacyRpcData) {
           return {
-            found: false,
-            status: undefined,
-            message: 'Your assignment has not been submitted yet.',
+            ...(legacyRpcData as CheckSubmissionResult),
+            subject_name: subjectName,
           };
         }
-
-        // Verify verification code if provided
-        if (verificationCode?.trim() && sub.verification_code_hash) {
-          const inputHash = await sha256(verificationCode.trim());
-          if (inputHash !== sub.verification_code_hash) {
-            return {
-              found: true,
-              message: 'Verification code does not match this roll number.',
-            };
-          }
-        }
-
-        return {
-          found: true,
-          status: sub.status,
-          student_name: sub.student_name,
-          roll_number: sub.roll_number,
-          submission_ref: sub.submission_ref,
-          version: sub.current_version,
-          submitted_at: sub.created_at,
-          rejection_reason: sub.rejection_reason,
-          rejected_at: sub.rejected_at,
-        };
-      } catch (err: any) {
-        console.warn('Supabase checkSubmission live query error, falling back to local:', err?.message);
       }
+
+      throw new Error(error?.message || 'Failed to check submission status in Supabase.');
     }
 
-    // Local Test Mode
-    await new Promise((r) => setTimeout(r, 400));
-    const { submissions } = initializeLocalData();
-    const sub = submissions.find(s => s.roll_number === rollNumber);
+    // Offline Local Test Mode
+    await new Promise((r) => setTimeout(r, 350));
+    const { submissions } = initializeLocalData(tableName);
+    const sub = submissions.find((s) => s.roll_number === rollNumber);
 
     if (!sub) {
       return {
         found: false,
         status: undefined,
-        message: 'Your assignment has not been submitted yet.',
+        subject_name: subjectName,
+        message: 'Your assignment has not been submitted yet for this subject.',
       };
     }
 
-    // If verification code provided, check it
-    if (verificationCode?.trim()) {
-      const inputHash = await sha256(verificationCode.trim());
-      // In local mode allow master test code "DEMO123" or actual hash match
-      if (verificationCode.trim().toUpperCase() !== 'DEMO123' && inputHash !== sub.verification_code_hash) {
-        return {
-          found: true,
-          message: 'Verification code does not match this roll number. Please double check your code.',
-        };
-      }
+    if (codeHash !== sub.verification_code_hash) {
+      return {
+        found: true,
+        invalid_code: true,
+        subject_name: subjectName,
+        message: 'Verification code does not match this roll number. Please double check your code.',
+      };
     }
 
     return {
@@ -517,6 +616,7 @@ export const submissionService = {
       student_name: sub.student_name,
       roll_number: sub.roll_number,
       submission_ref: sub.submission_ref,
+      subject_name: subjectName,
       version: sub.current_version,
       submitted_at: sub.created_at,
       rejection_reason: sub.rejection_reason,
@@ -525,46 +625,63 @@ export const submissionService = {
   },
 
   /**
-   * Admin: Fetch all submissions with file versions & student roster
+   * Admin: Fetch all submissions for the selected subject table + student roster
    */
-  async getAdminDashboardData(): Promise<{
+  async getAdminDashboardData(tableName = 'submissions'): Promise<{
     submissions: Submission[];
     roster: StudentRosterItem[];
   }> {
     if (isSupabaseConfigured && supabase) {
-      try {
+      let normalizedSubmissions: Submission[] = [];
+
+      const { data: rpcSubs, error: rpcErr } = await supabase.rpc('get_subject_submissions', {
+        p_table_name: tableName,
+      });
+
+      if (!rpcErr && Array.isArray(rpcSubs)) {
+        normalizedSubmissions = rpcSubs.map(normalizeSubmissionRow);
+      } else if (tableName === 'submissions') {
         const { data: subs, error: subErr } = await supabase
           .from('submissions')
           .select(`
-            *,
-            files:submission_files(*)
+            id, roll_number, student_name, live_website_url, submission_ref, status, rejection_reason, rejected_at, rejected_by, current_version, created_at, updated_at,
+            files:submission_files(id, submission_id, version, file_path, file_name, file_size, mime_type, uploaded_at)
           `)
           .order('created_at', { ascending: false });
 
-        if (subErr) throw subErr;
+        if (subErr) throw new Error(subErr.message);
+        normalizedSubmissions = (subs || []).map(normalizeSubmissionRow);
+      } else {
+        const { data: directSubs, error: directErr } = await supabase
+          .from(tableName)
+          .select('id, roll_number, student_name, live_website_url, submission_ref, status, rejection_reason, rejected_at, rejected_by, current_version, file_path, file_name, file_size, files, created_at, updated_at')
+          .order('created_at', { ascending: false });
 
-        const { data: roster, error: rosErr } = await supabase
-          .from('student_roster')
-          .select('*')
-          .order('roll_number', { ascending: true });
-
-        if (rosErr) throw rosErr;
-
-        return {
-          submissions: (subs as Submission[]) || [],
-          roster: (roster as StudentRosterItem[]) || DEFAULT_ROSTER,
-        };
-      } catch (err) {
-        console.warn('Falling back to local admin data due to Supabase fetch error:', err);
+        if (directErr) {
+          throw new Error(rpcErr?.message || directErr.message);
+        }
+        normalizedSubmissions = (directSubs || []).map(normalizeSubmissionRow);
       }
+
+      const { data: roster, error: rosErr } = await supabase
+        .from('student_roster')
+        .select('*')
+        .order('roll_number', { ascending: true });
+
+      if (rosErr) throw new Error(rosErr.message);
+
+      return {
+        submissions: normalizedSubmissions,
+        roster: (roster as StudentRosterItem[]) || [],
+      };
     }
 
-    // Local Test Mode
-    const { submissions, files, roster } = initializeLocalData();
-    const enriched = submissions.map(sub => ({
+    // Offline Local Test Mode
+    const { submissions, files, roster } = initializeLocalData(tableName);
+    const enriched = submissions.map((sub) => ({
       ...sub,
       files: files
-        .filter(f => f.submission_id === sub.id)
+        .filter((f) => f.submission_id === sub.id)
         .sort((a, b) => b.version - a.version),
     }));
 
@@ -575,40 +692,60 @@ export const submissionService = {
   },
 
   /**
-   * Admin: Reject an assignment
+   * Admin: Reject an assignment inside the selected subject table
    */
   async rejectSubmission(
-    submissionId: string, 
-    reason: string, 
-    adminEmail = 'shahmproject@gmail.com'
+    submissionId: string,
+    reason: string,
+    adminEmail = 'Administrator',
+    tableName = 'submissions'
   ): Promise<Submission> {
     const nowIso = new Date().toISOString();
-    const rejectionNote = reason.trim() || 'Your assignment has been rejected by the instructor. Please upload an assignment that fulfills the requirements.';
+    const cleanedReason = sanitizeText(reason, 1000, true);
+    const rejectionNote =
+      cleanedReason ||
+      'Your assignment has been rejected by the instructor. Please upload an assignment that fulfills the requirements.';
+    const safeAdminEmail = sanitizeText(adminEmail, 120) || 'Administrator';
 
     if (isSupabaseConfigured && supabase) {
-      const { data, error } = await supabase
-        .from('submissions')
-        .update({
-          status: 'rejected',
-          rejection_reason: rejectionNote,
-          rejected_at: nowIso,
-          rejected_by: adminEmail,
-          updated_at: nowIso,
-        })
-        .eq('id', submissionId)
-        .select(`
-          *,
-          files:submission_files(*)
-        `)
-        .single();
+      const { data: rpcUpdated, error: rpcErr } = await supabase.rpc('reject_subject_submission', {
+        p_table_name: tableName,
+        p_submission_id: submissionId,
+        p_reason: rejectionNote,
+        p_rejected_by: safeAdminEmail,
+      });
 
-      if (error) throw error;
-      return data as Submission;
+      if (!rpcErr && rpcUpdated) {
+        return normalizeSubmissionRow(rpcUpdated);
+      }
+
+      if (tableName === 'submissions' && isMissingSqlObjectError(rpcErr)) {
+        const { data, error } = await supabase
+          .from('submissions')
+          .update({
+            status: 'rejected',
+            rejection_reason: rejectionNote,
+            rejected_at: nowIso,
+            rejected_by: safeAdminEmail,
+            updated_at: nowIso,
+          })
+          .eq('id', submissionId)
+          .select(`
+            id, roll_number, student_name, live_website_url, submission_ref, status, rejection_reason, rejected_at, rejected_by, current_version, created_at, updated_at,
+            files:submission_files(id, submission_id, version, file_path, file_name, file_size, mime_type, uploaded_at)
+          `)
+          .single();
+
+        if (error) throw new Error(error.message);
+        return normalizeSubmissionRow(data);
+      }
+
+      throw new Error(rpcErr?.message || 'Failed to reject submission.');
     }
 
-    // Local Test Mode
-    const { submissions, files } = initializeLocalData();
-    const sub = submissions.find(s => s.id === submissionId);
+    // Offline Local Test Mode
+    const { submissions, files } = initializeLocalData(tableName);
+    const sub = submissions.find((s) => s.id === submissionId);
     if (!sub) {
       throw new Error('Submission not found.');
     }
@@ -616,14 +753,14 @@ export const submissionService = {
     sub.status = 'rejected';
     sub.rejection_reason = rejectionNote;
     sub.rejected_at = nowIso;
-    sub.rejected_by = adminEmail;
+    sub.rejected_by = safeAdminEmail;
     sub.updated_at = nowIso;
 
-    localStorage.setItem(STORAGE_KEY_SUBMISSIONS, JSON.stringify(submissions));
+    localStorage.setItem(getLocalSubmissionKey(tableName), JSON.stringify(submissions));
 
     return {
       ...sub,
-      files: files.filter(f => f.submission_id === sub.id),
+      files: files.filter((f) => f.submission_id === sub.id),
     };
   },
 
@@ -631,71 +768,126 @@ export const submissionService = {
    * Admin: Get signed URL for PDF viewing or downloading
    */
   async getSignedPdfUrl(filePath: string, download = false, fileName?: string): Promise<string> {
+    const cleanPath = sanitizeText(filePath, 512);
+    if (
+      !cleanPath ||
+      cleanPath.includes('..') ||
+      cleanPath.includes('//') ||
+      !/^[A-Za-z0-9][A-Za-z0-9._/-]*\.pdf$/i.test(cleanPath)
+    ) {
+      throw new Error('Invalid PDF storage path requested.');
+    }
+
+    const safeDownloadName = fileName ? sanitizeFileName(fileName) : true;
+
     if (isSupabaseConfigured && supabase) {
       const { data, error } = await supabase.storage
         .from('assignments')
-        .createSignedUrl(filePath, 120, {
-          download: download ? (fileName || true) : false,
+        .createSignedUrl(cleanPath, 120, {
+          download: download ? safeDownloadName : false,
         });
 
-      if (error) {
-        throw new Error(`Failed to create signed URL: ${error.message}`);
+      if (error || !data?.signedUrl) {
+        throw new Error(`Failed to create signed URL: ${error?.message || 'Unknown error'}`);
       }
       return data.signedUrl;
     }
 
-    // Local Test Mode: If file exists in localBlobStore, create a Blob Object URL
-    const blob = localBlobStore.get(filePath);
+    // Offline Test Mode fallback
+    const blob = localBlobStore.get(cleanPath);
     if (blob) {
       return URL.createObjectURL(blob);
     }
 
-    // Return a realistic mock PDF blob data URL if not stored in memory
-    const samplePdfContent = `%PDF-1.4\n1 0 obj\n<< /Title (CS421 Assignment Document: ${filePath}) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
+    const samplePdfContent = `%PDF-1.4\n1 0 obj\n<< /Title (Assignment Document) >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF`;
     const fallbackBlob = new Blob([samplePdfContent], { type: 'application/pdf' });
     return URL.createObjectURL(fallbackBlob);
   },
 
   /**
-   * Admin: Authenticate
+   * Admin: Verify active Supabase Auth session & membership in admin_users
    */
-  async loginAdmin(email: string, password: string): Promise<AdminUser> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-
-        if (!error && data?.user) {
-          return {
-            id: data.user.id,
-            email: data.user.email || email,
-            full_name: data.user.user_metadata?.full_name || 'Course Administrator',
-            role: 'instructor',
-          };
-        }
-      } catch (err: any) {
-        console.warn('Supabase auth attempt:', err?.message);
-      }
+  async verifyAdminSession(): Promise<AdminUser | null> {
+    if (!isSupabaseConfigured || !supabase) {
+      return null;
     }
 
-    // Local Test Mode fallback
-    await new Promise(r => setTimeout(r, 400));
-    const validEmails = ['shahmproject@gmail.com', 'admin@compiler.edu', 'instructor@compiler.edu'];
-    if (validEmails.includes(email.toLowerCase().trim())) {
-      if (email.toLowerCase().trim() === 'shahmproject@gmail.com' && password !== 'shah@8844!') {
-        throw new Error('Invalid email or password.');
+    const { data: userRes, error: userErr } = await supabase.auth.getUser();
+    const user = userRes?.user;
+    if (userErr || !user || !user.email) {
+      return null;
+    }
+
+    const { data: verifyRpc, error: verifyErr } = await supabase.rpc('verify_admin_access');
+    if (!verifyErr && verifyRpc) {
+      if (!verifyRpc.is_admin) {
+        await supabase.auth.signOut();
+        return null;
       }
       return {
-        id: 'admin-local-1',
-        email: email.trim(),
-        full_name: 'Administrator',
-        role: 'admin',
+        id: user.id,
+        email: verifyRpc.email || user.email,
+        full_name: sanitizeText(verifyRpc.full_name || 'Administrator', 100),
+        role: verifyRpc.role === 'instructor' ? 'instructor' : 'admin',
       };
     }
 
-    throw new Error('Invalid email or password.');
+    // Fallback when verify_admin_access() has not been deployed yet
+    const { data: adminRows, error: adminErr } = await supabase
+      .from('admin_users')
+      .select('email, full_name, role');
+
+    if (adminErr || !Array.isArray(adminRows)) {
+      await supabase.auth.signOut();
+      return null;
+    }
+
+    const match = adminRows.find(
+      (row) => row.email && row.email.toLowerCase().trim() === user.email!.toLowerCase().trim()
+    );
+    if (!match) {
+      await supabase.auth.signOut();
+      return null;
+    }
+
+    return {
+      id: user.id,
+      email: match.email,
+      full_name: sanitizeText(match.full_name || 'Administrator', 100),
+      role: match.role === 'instructor' ? 'instructor' : 'admin',
+    };
+  },
+
+  /**
+   * Admin: Authenticate via Supabase Auth and verify admin_users membership
+   */
+  async loginAdmin(email: string, password: string): Promise<AdminUser> {
+    if (!isSupabaseConfigured || !supabase) {
+      throw new Error(
+        'Live Supabase authentication is not configured. Configure valid Supabase environment credentials to sign in as administrator.'
+      );
+    }
+
+    const cleanEmail = sanitizeText(email, 160).toLowerCase();
+    if (!cleanEmail || !password) {
+      throw new Error('Administrator email and password are required.');
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password,
+    });
+
+    if (error || !data?.user) {
+      throw new Error(error?.message || 'Invalid administrator email or password.');
+    }
+
+    const verifiedAdmin = await this.verifyAdminSession();
+    if (!verifiedAdmin) {
+      throw new Error('Forbidden: This account is not registered in admin_users.');
+    }
+
+    return verifiedAdmin;
   },
 
   /**
@@ -705,5 +897,5 @@ export const submissionService = {
     if (isSupabaseConfigured && supabase) {
       await supabase.auth.signOut();
     }
-  }
+  },
 };

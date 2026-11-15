@@ -1,13 +1,20 @@
 import React from 'react';
 import { ArrowLeft, UploadCloud } from 'lucide-react';
 import { SubmissionChecker } from '../components/student/SubmissionChecker';
+import type { SubjectAssignment } from '../types';
 
 interface CheckSubmissionPageProps {
+  subjects: SubjectAssignment[];
+  selectedSubjectTable: string;
+  onSelectSubject: (tableName: string) => void;
   onNavigateHome: () => void;
   onNavigateToSubmit: (rollNumber?: string, studentName?: string) => void;
 }
 
 export const CheckSubmissionPage: React.FC<CheckSubmissionPageProps> = ({
+  subjects,
+  selectedSubjectTable,
+  onSelectSubject,
   onNavigateHome,
   onNavigateToSubmit,
 }) => {
@@ -32,6 +39,9 @@ export const CheckSubmissionPage: React.FC<CheckSubmissionPageProps> = ({
 
       {/* Primary Checker Component */}
       <SubmissionChecker
+        subjects={subjects}
+        selectedSubjectTable={selectedSubjectTable}
+        onSelectSubject={onSelectSubject}
         onResubmitClick={(rollNumber, studentName) => {
           onNavigateToSubmit(rollNumber, studentName);
         }}
