@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 
@@ -50,10 +51,10 @@ export const Modal: React.FC<ModalProps> = ({
     full: 'max-w-[95vw]',
   };
 
-  return (
+  const modalTree = (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex justify-center p-3 sm:p-4 overflow-y-auto">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -64,13 +65,13 @@ export const Modal: React.FC<ModalProps> = ({
             className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 backdrop-blur-md"
           />
 
-          {/* Modal Card with Specular Rim & Glossy Depth */}
+          {/* Modal Card with Specular Rim & Glossy Depth (my-auto centers safely without clipping tall content) */}
           <motion.div
             initial={{ opacity: 0, scale: 0.95, y: 15 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 15 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className={`relative w-full ${widthClasses[maxWidth]} bg-white/95 dark:bg-[#0f172a]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl p-6 sm:p-7 text-slate-900 dark:text-slate-100 z-10 my-8`}
+            className={`relative my-auto w-full ${widthClasses[maxWidth]} bg-white/95 dark:bg-[#0f172a]/95 border border-slate-200 dark:border-white/10 rounded-3xl shadow-2xl p-5 sm:p-7 text-slate-900 dark:text-slate-100 z-10`}
           >
             {(title || showCloseButton) && (
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-100 dark:border-white/10">
@@ -92,4 +93,6 @@ export const Modal: React.FC<ModalProps> = ({
       )}
     </AnimatePresence>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalTree, document.body) : null;
 };

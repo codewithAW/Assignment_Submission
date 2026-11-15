@@ -2,6 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { AlertTriangle, BookOpen, Calendar, Clock } from 'lucide-react';
 import type { SubjectAssignment } from '../../types';
 import { formatDate } from '../../utils/date';
+import {
+  isSubjectClosed,
+  getRemainingCloseMs,
+  formatCountdownHms,
+} from '../../utils/subjectStatus';
 
 interface SubjectSelectorBannerProps {
   subjects: SubjectAssignment[];
@@ -22,18 +27,23 @@ export const SubjectSelectorBanner: React.FC<SubjectSelectorBannerProps> = ({
 }) => {
   const [nowMs, setNowMs] = useState<number>(() => Date.now());
 
-  useEffect(() => {
-    const id = setInterval(() => setNowMs(Date.now()), 60000);
-    return () => clearInterval(id);
-  }, []);
-
   const activeSubject =
     subjects.find((s) => s.table_name === selectedTable) || subjects[0];
+
+  const isClosed = isSubjectClosed(activeSubject);
+
+  useEffect(() => {
+    const intervalMs = isClosed ? 1000 : 60000;
+    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [isClosed]);
 
   const isDeadlineValid = Boolean(activeSubject?.deadline);
   const isPastDeadline = isDeadlineValid
     ? new Date(activeSubject.deadline).getTime() < nowMs
     : false;
+  const remainingCloseMs = getRemainingCloseMs(activeSubject, nowMs);
+  const showClosedBadge = isClosed || isPastDeadline;
 
   return (
     <div
@@ -60,16 +70,27 @@ export const SubjectSelectorBanner: React.FC<SubjectSelectorBannerProps> = ({
             <BookOpen className="w-3.5 h-3.5 text-sky-500 shrink-0" />
             <span>{label}</span>
           </label>
-          {activeSubject && (
+          {activeSubject ? (
             <span
               className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border ${
-                isPastDeadline
+                showClosedBadge
                   ? 'bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-500/40'
                   : 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-500/40'
               }`}
             >
               <Clock className="w-3 h-3 shrink-0" />
-              <span>{isPastDeadline ? 'Deadline Passed' : 'Open for Submission'}</span>
+              <span>
+                {isClosed
+                  ? 'Closed • Deadline Passed'
+                  : isPastDeadline
+                    ? 'Deadline Passed'
+                    : 'Open for Submission'}
+              </span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold border bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700">
+              <Clock className="w-3 h-3 shrink-0" />
+              <span>No Open Subjects</span>
             </span>
           )}
         </div>
@@ -77,21 +98,33 @@ export const SubjectSelectorBanner: React.FC<SubjectSelectorBannerProps> = ({
         <select
           value={activeSubject?.table_name || ''}
           onChange={(e) => onSelectSubject(e.target.value)}
-          disabled={disabled}
+          disabled={disabled || subjects.length === 0}
           aria-label={label}
-          className="glossy-input w-full px-3.5 py-2.5 sm:py-3 rounded-2xl text-base sm:text-sm font-semibold cursor-pointer min-h-[44px]"
+          className="glossy-input w-full px-3.5 py-2.5 sm:py-3 rounded-2xl text-base sm:text-sm font-semibold cursor-pointer min-h-[44px] disabled:opacity-60 disabled:cursor-not-allowed"
         >
-          {subjects.map((sub) => (
-            <option key={sub.table_name} value={sub.table_name}>
-              {sub.subject_name}
-            </option>
-          ))}
+          {subjects.length === 0 ? (
+            <option value="">No open assignments currently available</option>
+          ) : (
+            subjects.map((sub) => (
+              <option key={sub.table_name} value={sub.table_name}>
+                {sub.subject_name}
+                {isSubjectClosed(sub) ? ' (Closed)' : ''}
+              </option>
+            ))
+          )}
         </select>
 
         {activeSubject && isDeadlineValid && (
-          <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-            <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-            <span>Deadline: {formatDate(activeSubject.deadline)}</span>
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+            <span className="inline-flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+              <span>Deadline: {formatDate(activeSubject.deadline)}</span>
+            </span>
+            {isClosed && remainingCloseMs > 0 && (
+              <span className="text-rose-600 dark:text-rose-400 font-semibold tabular-nums">
+                Removes in {formatCountdownHms(remainingCloseMs)}
+              </span>
+            )}
           </div>
         )}
       </div>

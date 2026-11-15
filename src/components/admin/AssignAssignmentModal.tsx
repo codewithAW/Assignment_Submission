@@ -12,6 +12,7 @@ import {
 import { Modal } from '../ui/Modal';
 import { submissionService } from '../../services/submissionService';
 import { subjectNameToTableName } from '../../utils/security';
+import { toDateTimeLocalInput } from '../../utils/date';
 import type { SubjectAssignment } from '../../types';
 import multiSubjectSql from '../../../supabase/multi_subject_setup.sql?raw';
 
@@ -24,8 +25,7 @@ interface AssignAssignmentModalProps {
 function getDefaultDeadlineInput(): string {
   const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   d.setHours(23, 59, 0, 0);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return toDateTimeLocalInput(d.toISOString());
 }
 
 export const AssignAssignmentModal: React.FC<AssignAssignmentModalProps> = ({

@@ -23,6 +23,8 @@ import { formatFileSize } from '../../utils/date';
 import { Modal } from '../ui/Modal';
 import { ConfirmationCard } from './ConfirmationCard';
 import { SubjectSelectorBanner } from './SubjectSelectorBanner';
+import { ClosedAssignmentModal } from './ClosedAssignmentModal';
+import { isSubjectClosed } from '../../utils/subjectStatus';
 
 interface SubmissionFormProps {
   subjects: SubjectAssignment[];
@@ -45,6 +47,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
 }) => {
   const activeSubject =
     subjects.find((s) => s.table_name === selectedSubjectTable) || subjects[0];
+  const hasOtherOpenSubjects = subjects.some(
+    (s) => s.table_name !== activeSubject?.table_name && !isSubjectClosed(s)
+  );
   const [studentName, setStudentName] = useState(prefillStudentName || '');
   const [rollNumber, setRollNumber] = useState(prefillRollNumber || '');
   const [liveUrl, setLiveUrl] = useState('');
@@ -56,6 +61,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isDuplicateWarning, setIsDuplicateWarning] = useState(false);
+  const [closedModalOpen, setClosedModalOpen] = useState<boolean>(() =>
+    Boolean(activeSubject && isSubjectClosed(activeSubject))
+  );
 
   // Success Confirmation Modal
   const [successData, setSuccessData] = useState<(SubmitAssignmentResponse & {
@@ -74,6 +82,12 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
       setStudentName(prefillStudentName);
     }
   }, [prefillRollNumber, prefillStudentName]);
+
+  const handleFormSelectSubject = (tableName: string) => {
+    onSelectSubject(tableName);
+    const chosen = subjects.find((s) => s.table_name === tableName);
+    setClosedModalOpen(Boolean(chosen && isSubjectClosed(chosen)));
+  };
 
   const handleFileSelection = async (file: File) => {
     setErrorMessage(null);
@@ -118,6 +132,16 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
     e.preventDefault();
     setErrorMessage(null);
     setIsDuplicateWarning(false);
+
+    if (!activeSubject) {
+      setErrorMessage('No open subject assignments are currently available for submission.');
+      return;
+    }
+
+    if (isSubjectClosed(activeSubject)) {
+      setClosedModalOpen(true);
+      return;
+    }
 
     const cleanStudentName = sanitizeText(studentName, 120);
     if (cleanStudentName.length < 2) {
@@ -184,6 +208,9 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
     } catch (err: any) {
       console.error('Submission error:', err);
       const msg = err.message || 'An unexpected error occurred during submission.';
+      if (err?.code === 'ASSIGNMENT_CLOSED' || msg.toLowerCase().includes('assignment deadline passed')) {
+        setClosedModalOpen(true);
+      }
       setErrorMessage(msg);
       if (msg.toLowerCase().includes('already has an active submission') || msg.toLowerCase().includes('duplicate')) {
         setIsDuplicateWarning(true);
@@ -266,7 +293,7 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           <SubjectSelectorBanner
             subjects={subjects}
             selectedTable={selectedSubjectTable}
-            onSelectSubject={onSelectSubject}
+            onSelectSubject={handleFormSelectSubject}
             showYellowWarning={true}
             label="Subject Assignment *"
             disabled={isSubmitting}
@@ -489,6 +516,23 @@ export const SubmissionForm: React.FC<SubmissionFormProps> = ({
           />
         )}
       </Modal>
+
+      {/* Closed Assignment Popup Modal */}
+      <ClosedAssignmentModal
+        isOpen={closedModalOpen}
+        subject={activeSubject || null}
+        hasOtherOpenSubjects={hasOtherOpenSubjects}
+        onClose={() => setClosedModalOpen(false)}
+        onChooseAnotherSubject={() => {
+          const openSubj = subjects.find(
+            (s) => s.table_name !== activeSubject?.table_name && !isSubjectClosed(s)
+          );
+          if (openSubj) {
+            onSelectSubject(openSubj.table_name);
+          }
+        }}
+        onCheckStatus={onScrollToChecker}
+      />
     </div>
   );
 };

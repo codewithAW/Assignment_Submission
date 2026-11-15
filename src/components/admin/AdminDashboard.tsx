@@ -14,7 +14,8 @@ import {
   BookPlus,
   BookOpen,
   Calendar,
-  Database
+  Database,
+  Pencil
 } from 'lucide-react';
 import { submissionService } from '../../services/submissionService';
 import type { Submission, StudentRosterItem, AdminUser, SubjectAssignment } from '../../types';
@@ -25,6 +26,9 @@ import { RejectionModal } from './RejectionModal';
 import { VersionHistoryModal } from './VersionHistoryModal';
 import { PdfViewerModal } from './PdfViewerModal';
 import { AssignAssignmentModal } from './AssignAssignmentModal';
+import { EditAssignmentModal } from './EditAssignmentModal';
+import { SubjectCloseControls } from './SubjectCloseControls';
+import { isSubjectClosed } from '../../utils/subjectStatus';
 import { ToastContainer } from '../ui/Toast';
 
 interface AdminDashboardProps {
@@ -50,6 +54,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   const activeSubject =
     subjects.find((s) => s.table_name === activeSubjectTable) || subjects[0];
@@ -99,9 +104,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   useEffect(() => {
+    const effectiveTable = activeSubject?.table_name;
+    if (!effectiveTable) {
+      return;
+    }
+
     let cancelled = false;
     submissionService
-      .getAdminDashboardData(activeSubjectTable)
+      .getAdminDashboardData(effectiveTable)
       .then((data) => {
         if (!cancelled) {
           setSubmissions(data.submissions);
@@ -123,7 +133,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeSubjectTable]);
+  }, [activeSubject?.table_name]);
 
   const handleAssignmentCreated = async (created: SubjectAssignment) => {
     await onSubjectsChanged();
@@ -134,6 +144,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       'success',
       `Assignment Assigned: ${created.subject_name}`,
       `Supabase table "public.${created.table_name}" created successfully.`
+    );
+  };
+
+  const handleAssignmentUpdated = async (updated: SubjectAssignment) => {
+    await onSubjectsChanged();
+    showToast(
+      'success',
+      `Assignment Updated: ${updated.subject_name}`,
+      `New deadline: ${formatDate(updated.deadline)}`
+    );
+  };
+
+  const handleAssignmentDeleted = async (deletedTableName: string, deletedSubjectName: string) => {
+    const remaining = subjects.filter((s) => s.table_name !== deletedTableName);
+    setSubmissions([]);
+    setCurrentPage(1);
+    setActiveSubjectTable(remaining[0]?.table_name || '');
+    setIsLoading(remaining.length > 0);
+    await onSubjectsChanged();
+    showToast(
+      'success',
+      `Assignment Deleted: ${deletedSubjectName}`,
+      `Removed "${deletedSubjectName}" and its Supabase table records.`
     );
   };
 
@@ -296,41 +329,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsAssignModalOpen(true)}
-              className="glossy-btn-primary w-full sm:w-auto px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-md min-h-[42px] touch-manipulation shrink-0"
-            >
-              <BookPlus className="w-4 h-4 shrink-0" />
-              <span>Assign New Assignment</span>
-            </button>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0">
+              {activeSubject && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditModalOpen(true)}
+                    className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-sm min-h-[42px] touch-manipulation shrink-0 transition"
+                    title="Edit selected assignment name, deadline, or delete assignment"
+                  >
+                    <Pencil className="w-4 h-4 text-sky-600 dark:text-sky-400 shrink-0" />
+                    <span>Edit</span>
+                  </button>
+                  <SubjectCloseControls
+                    subject={activeSubject}
+                    onSubjectUpdated={async () => {
+                      await onSubjectsChanged();
+                    }}
+                    onNotify={showToast}
+                  />
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsAssignModalOpen(true)}
+                className="glossy-btn-primary w-full sm:w-auto px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm inline-flex items-center justify-center gap-2 shadow-md min-h-[42px] touch-manipulation shrink-0"
+              >
+                <BookPlus className="w-4 h-4 shrink-0" />
+                <span>Assign New Assignment</span>
+              </button>
+            </div>
           </div>
 
           {/* Scrollable Subject Tabs */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-            {subjects.map((subj) => {
-              const isSelected = subj.table_name === activeSubject?.table_name;
-              return (
-                <button
-                  key={subj.table_name}
-                  type="button"
-                  onClick={() => {
-                    if (subj.table_name !== activeSubject?.table_name) {
-                      setIsLoading(true);
-                      setActiveSubjectTable(subj.table_name);
-                      setCurrentPage(1);
-                    }
-                  }}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition touch-manipulation min-h-[36px] border ${
-                    isSelected
-                      ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
-                      : 'bg-slate-100/90 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800'
-                  }`}
-                >
-                  {subj.subject_name}
-                </button>
-              );
-            })}
+            {subjects.length === 0 ? (
+              <span className="text-xs text-slate-500 dark:text-slate-400 italic py-1">
+                No assignments registered yet. Click &ldquo;Assign New Assignment&rdquo; to create one.
+              </span>
+            ) : (
+              subjects.map((subj) => {
+                const isSelected = subj.table_name === activeSubject?.table_name;
+                const isClosed = isSubjectClosed(subj);
+                return (
+                  <button
+                    key={subj.table_name}
+                    type="button"
+                    onClick={() => {
+                      if (subj.table_name !== activeSubject?.table_name) {
+                        setIsLoading(true);
+                        setActiveSubjectTable(subj.table_name);
+                        setCurrentPage(1);
+                      }
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 transition touch-manipulation min-h-[36px] border inline-flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-sky-600 text-white border-sky-500 shadow-sm'
+                        : 'bg-slate-100/90 dark:bg-slate-900/80 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800 hover:bg-slate-200 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span>{subj.subject_name}</span>
+                    {isClosed && (
+                      <span
+                        className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide ${
+                          isSelected
+                            ? 'bg-rose-500 text-white'
+                            : 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
+                        }`}
+                      >
+                        Closed
+                      </span>
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -588,6 +661,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
         isOpen={isAssignModalOpen}
         onClose={() => setIsAssignModalOpen(false)}
         onAssignmentCreated={handleAssignmentCreated}
+      />
+
+      <EditAssignmentModal
+        subject={activeSubject || null}
+        isOpen={isEditModalOpen && Boolean(activeSubject)}
+        onClose={() => setIsEditModalOpen(false)}
+        onAssignmentUpdated={handleAssignmentUpdated}
+        onAssignmentDeleted={handleAssignmentDeleted}
       />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { HomePage } from './pages/HomePage';
 import { SubmitAssignmentPage } from './pages/SubmitAssignmentPage';
 import { CheckSubmissionPage } from './pages/CheckSubmissionPage';
@@ -7,6 +7,11 @@ import { Navbar } from './components/navigation/Navbar';
 import { ParticleField } from './components/three/ParticleField';
 import { submissionService, DEFAULT_SUBJECT } from './services/submissionService';
 import type { SubjectAssignment } from './types';
+import {
+  isSubjectHiddenFromSubmit,
+  isSubjectClosed,
+  getRemainingCloseMs,
+} from './utils/subjectStatus';
 
 export function App() {
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -18,20 +23,53 @@ export function App() {
   });
 
   const [subjects, setSubjects] = useState<SubjectAssignment[]>([DEFAULT_SUBJECT]);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
   const [selectedSubjectTable, setSelectedSubjectTable] = useState<string>(
     DEFAULT_SUBJECT.table_name
   );
   const [prefillRoll, setPrefillRoll] = useState('');
   const [prefillName, setPrefillName] = useState('');
 
+  const submittableSubjects = useMemo(
+    () => subjects.filter((s) => !isSubjectHiddenFromSubmit(s, nowMs)),
+    [subjects, nowMs]
+  );
+
+  // Derive active subject selection for submit flows so expired subjects never linger
+  const effectiveSubmitTable = useMemo(() => {
+    if (submittableSubjects.length === 0) return '';
+    if (submittableSubjects.some((s) => s.table_name === selectedSubjectTable)) {
+      return selectedSubjectTable;
+    }
+    const preferred =
+      submittableSubjects.find((s) => !isSubjectClosed(s)) || submittableSubjects[0];
+    return preferred.table_name;
+  }, [submittableSubjects, selectedSubjectTable]);
+
+  // Schedule an automatic re-render when the next closed subject completes its 24-hour window
+  useEffect(() => {
+    const pendingRemovals = subjects
+      .filter((s) => isSubjectClosed(s) && !isSubjectHiddenFromSubmit(s, nowMs))
+      .map((s) => getRemainingCloseMs(s, nowMs))
+      .filter((ms) => ms > 0);
+
+    if (pendingRemovals.length === 0) return;
+
+    const nextExpiryMs = Math.min(...pendingRemovals);
+    const waitMs = Math.min(nextExpiryMs + 250, 60 * 60 * 1000);
+    const id = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, waitMs);
+
+    return () => window.clearTimeout(id);
+  }, [subjects, nowMs]);
+
   const refreshSubjects = useCallback(async () => {
     try {
-      const { subjects: fetched } = await submissionService.getSubjects();
-      if (fetched.length > 0) {
+      const { subjects: fetched, migrationRequired } = await submissionService.getSubjects();
+      setNowMs(Date.now());
+      if (!migrationRequired || fetched.length > 0) {
         setSubjects(fetched);
-        setSelectedSubjectTable((prev) =>
-          fetched.some((s) => s.table_name === prev) ? prev : fetched[0].table_name
-        );
       }
     } catch (err) {
       console.warn('Could not load subjects list:', err);
@@ -40,6 +78,17 @@ export function App() {
 
   useEffect(() => {
     refreshSubjects();
+  }, [refreshSubjects]);
+
+  // Keep open/closed subject state synchronized when returning to tab
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSubjects();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [refreshSubjects]);
 
   useEffect(() => {
@@ -82,8 +131,8 @@ export function App() {
           />
         ) : currentPath === '/submit' ? (
           <SubmitAssignmentPage
-            subjects={subjects}
-            selectedSubjectTable={selectedSubjectTable}
+            subjects={submittableSubjects}
+            selectedSubjectTable={effectiveSubmitTable}
             onSelectSubject={setSelectedSubjectTable}
             prefillRollNumber={prefillRoll}
             prefillStudentName={prefillName}
@@ -100,8 +149,8 @@ export function App() {
           />
         ) : (
           <HomePage
-            subjects={subjects}
-            selectedSubjectTable={selectedSubjectTable}
+            subjects={submittableSubjects}
+            selectedSubjectTable={effectiveSubmitTable}
             onSelectSubject={setSelectedSubjectTable}
             onNavigateToSubmit={() => navigateTo('/submit')}
             onNavigateToCheck={() => navigateTo('/check')}

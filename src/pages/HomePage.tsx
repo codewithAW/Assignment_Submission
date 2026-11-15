@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   UploadCloud,
@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import type { SubjectAssignment } from '../types';
 import { SubjectSelectorBanner } from '../components/student/SubjectSelectorBanner';
+import { ClosedAssignmentModal } from '../components/student/ClosedAssignmentModal';
+import { isSubjectClosed } from '../utils/subjectStatus';
 
 interface HomePageProps {
   subjects: SubjectAssignment[];
@@ -29,6 +31,30 @@ export const HomePage: React.FC<HomePageProps> = ({
   onNavigateToSubmit,
   onNavigateToCheck,
 }) => {
+  const [closedModalOpen, setClosedModalOpen] = useState(false);
+
+  const selectedSubject =
+    subjects.find((s) => s.table_name === selectedSubjectTable) || subjects[0] || null;
+  const hasOtherOpenSubjects = subjects.some(
+    (s) => s.table_name !== selectedSubject?.table_name && !isSubjectClosed(s)
+  );
+
+  const handleSubmitAssignmentClick = () => {
+    if (subjects.length === 0 || (selectedSubject && isSubjectClosed(selectedSubject))) {
+      setClosedModalOpen(true);
+      return;
+    }
+    onNavigateToSubmit();
+  };
+
+  const handleHomeSelectSubject = (tableName: string) => {
+    onSelectSubject(tableName);
+    const chosen = subjects.find((s) => s.table_name === tableName);
+    if (chosen && isSubjectClosed(chosen)) {
+      setClosedModalOpen(true);
+    }
+  };
+
   return (
     <div className="max-w-5xl mx-auto px-3.5 sm:px-6 py-6 sm:py-12 space-y-8 sm:space-y-10">
       {/* Hero Welcome (HCI Rule: Instant Clarity & Focus) */}
@@ -71,7 +97,7 @@ export const HomePage: React.FC<HomePageProps> = ({
           initial={{ opacity: 0, y: 15 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
-          onClick={onNavigateToSubmit}
+          onClick={handleSubmitAssignmentClick}
           className="glossy-card rounded-2xl sm:rounded-3xl p-5 sm:p-8 cursor-pointer group transition-all flex flex-col justify-between gap-5 touch-manipulation"
         >
           <div className="space-y-4">
@@ -97,7 +123,7 @@ export const HomePage: React.FC<HomePageProps> = ({
             <SubjectSelectorBanner
               subjects={subjects}
               selectedTable={selectedSubjectTable}
-              onSelectSubject={onSelectSubject}
+              onSelectSubject={handleHomeSelectSubject}
               showYellowWarning={true}
               label="Choose Subject Before Submitting"
             />
@@ -109,7 +135,7 @@ export const HomePage: React.FC<HomePageProps> = ({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onNavigateToSubmit();
+                handleSubmitAssignmentClick();
               }}
               className="glossy-btn-primary px-3.5 sm:px-4 py-2 rounded-xl font-semibold text-xs flex items-center gap-1.5 shadow min-h-[38px]"
             >
@@ -226,6 +252,21 @@ export const HomePage: React.FC<HomePageProps> = ({
           Powered by Supabase PostgreSQL Database &amp; Private Storage Vault
         </p>
       </footer>
+
+      {/* Closed Assignment Popup Modal */}
+      <ClosedAssignmentModal
+        isOpen={closedModalOpen}
+        subject={selectedSubject}
+        hasOtherOpenSubjects={hasOtherOpenSubjects}
+        onClose={() => setClosedModalOpen(false)}
+        onChooseAnotherSubject={() => {
+          const openSubj = subjects.find((s) => !isSubjectClosed(s));
+          if (openSubj) {
+            onSelectSubject(openSubj.table_name);
+          }
+        }}
+        onCheckStatus={onNavigateToCheck}
+      />
     </div>
   );
 };

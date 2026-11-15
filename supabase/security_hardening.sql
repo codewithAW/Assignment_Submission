@@ -138,6 +138,14 @@ CREATE TABLE IF NOT EXISTS public.verification_attempts (
 ALTER TABLE public.verification_attempts ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.verification_attempts FROM PUBLIC, anon, authenticated;
 
+-- Ensure subject_assignments tracks close timestamp for 24h auto-hide countdown
+ALTER TABLE IF EXISTS public.subject_assignments
+    ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ NULL;
+
+CREATE INDEX IF NOT EXISTS idx_subject_assignments_closed_at
+    ON public.subject_assignments (closed_at)
+    WHERE closed_at IS NOT NULL;
+
 -- 5. Dynamically clean ALL overly permissive policies on portal tables & lock down grants
 DO $$
 DECLARE
@@ -493,6 +501,7 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_table_name TEXT;
+    v_closed_at TIMESTAMPTZ;
     v_roll TEXT;
     v_student TEXT;
     v_live_url TEXT;
@@ -512,6 +521,18 @@ DECLARE
     v_file_obj JSONB;
 BEGIN
     v_table_name := public._resolve_subject_table(p_table_name);
+
+    SELECT sa.closed_at
+    INTO v_closed_at
+    FROM public.subject_assignments sa
+    WHERE sa.table_name = v_table_name
+      AND sa.is_active = true
+    LIMIT 1;
+
+    IF v_closed_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Assignment deadline passed. Submissions for this subject are closed.'
+            USING ERRCODE = '42501';
+    END IF;
     v_roll := UPPER(public._sanitize_portal_text(p_roll_number, 25));
     v_student := public._sanitize_portal_text(p_student_name, 120);
     v_live_url := NULLIF(public._sanitize_portal_text(p_live_website_url, 2048), '');
@@ -1079,6 +1100,115 @@ $$;
 REVOKE ALL ON FUNCTION public.reject_subject_submission(TEXT, UUID, TEXT, TEXT) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.reject_subject_submission(TEXT, UUID, TEXT, TEXT) TO authenticated;
 
+-- 12b. Admin RPCs: Close an assignment (with 24h visibility timer) & Revert to reopen
+CREATE OR REPLACE FUNCTION public.close_subject_assignment(p_table_name TEXT)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_table_name TEXT;
+    v_now TIMESTAMPTZ := timezone('utc'::text, now());
+    v_updated JSON;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Forbidden: Only authorized administrators can close subject assignments.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    v_table_name := public._resolve_subject_table(p_table_name);
+
+    UPDATE public.subject_assignments
+    SET closed_at = COALESCE(closed_at, v_now),
+        updated_at = v_now
+    WHERE table_name = v_table_name
+    RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+
+    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
+        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, closed_at, updated_at)
+        VALUES (
+            'Compiler Construction',
+            'submissions',
+            TIMESTAMPTZ '2026-12-31 23:59:00+00',
+            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
+            true,
+            v_now,
+            v_now
+        )
+        ON CONFLICT (table_name) DO UPDATE
+            SET closed_at = COALESCE(public.subject_assignments.closed_at, v_now),
+                updated_at = v_now
+        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+    END IF;
+
+    IF v_updated IS NULL THEN
+        RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN v_updated;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.close_subject_assignment(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.close_subject_assignment(TEXT) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.revert_subject_assignment(p_table_name TEXT)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_table_name TEXT;
+    v_now TIMESTAMPTZ := timezone('utc'::text, now());
+    v_updated JSON;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Forbidden: Only authorized administrators can revert subject assignments.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    v_table_name := public._resolve_subject_table(p_table_name);
+
+    UPDATE public.subject_assignments
+    SET closed_at = NULL,
+        is_active = true,
+        updated_at = v_now
+    WHERE table_name = v_table_name
+    RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+
+    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
+        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, closed_at, updated_at)
+        VALUES (
+            'Compiler Construction',
+            'submissions',
+            TIMESTAMPTZ '2026-12-31 23:59:00+00',
+            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
+            true,
+            NULL,
+            v_now
+        )
+        ON CONFLICT (table_name) DO UPDATE
+            SET closed_at = NULL,
+                is_active = true,
+                updated_at = v_now
+        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+    END IF;
+
+    IF v_updated IS NULL THEN
+        RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN v_updated;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.revert_subject_assignment(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.revert_subject_assignment(TEXT) TO authenticated;
+
 -- 13. Harden Storage RLS for private `assignments` bucket (PDFs only, no traversal, no anon reads)
 UPDATE storage.buckets
 SET public = false,
@@ -1141,5 +1271,148 @@ CREATE POLICY "Admins delete assignment PDFs"
         bucket_id = 'assignments'
         AND (SELECT public.is_admin())
     );
+
+-- 14. Admin RPCs: Update assignment name/deadline & permanently delete an assignment
+CREATE OR REPLACE FUNCTION public.update_subject_assignment(
+    p_table_name TEXT,
+    p_subject_name TEXT,
+    p_deadline TIMESTAMPTZ
+)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_table_name TEXT;
+    v_subject_name TEXT;
+    v_now TIMESTAMPTZ := timezone('utc'::text, now());
+    v_updated JSON;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Forbidden: Only authorized administrators can update subject assignments.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    v_table_name := public._resolve_subject_table(p_table_name);
+    v_subject_name := public._sanitize_portal_text(p_subject_name, 100);
+
+    IF char_length(v_subject_name) < 2 OR char_length(v_subject_name) > 100 THEN
+        RAISE EXCEPTION 'Subject name must be between 2 and 100 characters.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF p_deadline IS NULL THEN
+        RAISE EXCEPTION 'A valid submission deadline is required.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+        FROM public.subject_assignments sa
+        WHERE lower(sa.subject_name) = lower(v_subject_name)
+          AND sa.table_name <> v_table_name
+    ) THEN
+        RAISE EXCEPTION 'An assignment for subject "%" already exists.', v_subject_name
+            USING ERRCODE = '23505';
+    END IF;
+
+    UPDATE public.subject_assignments
+    SET subject_name = v_subject_name,
+        deadline = p_deadline,
+        updated_at = v_now
+    WHERE table_name = v_table_name
+    RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+
+    IF v_updated IS NULL AND v_table_name = 'submissions' THEN
+        INSERT INTO public.subject_assignments (subject_name, table_name, deadline, created_by, is_active, updated_at)
+        VALUES (
+            v_subject_name,
+            'submissions',
+            p_deadline,
+            COALESCE((SELECT auth.jwt() ->> 'email'), 'shahmproject@gmail.com'),
+            true,
+            v_now
+        )
+        ON CONFLICT (table_name) DO UPDATE
+            SET subject_name = EXCLUDED.subject_name,
+                deadline = EXCLUDED.deadline,
+                updated_at = v_now
+        RETURNING row_to_json(public.subject_assignments.*)::json INTO v_updated;
+    END IF;
+
+    IF v_updated IS NULL THEN
+        RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN v_updated;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.update_subject_assignment(TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.update_subject_assignment(TEXT, TEXT, TIMESTAMPTZ) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.delete_subject_assignment(p_table_name TEXT)
+RETURNS JSON
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_table_name TEXT;
+    v_deleted_name TEXT;
+BEGIN
+    IF NOT public.is_admin() THEN
+        RAISE EXCEPTION 'Forbidden: Only authorized administrators can delete subject assignments.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    v_table_name := trim(COALESCE(p_table_name, ''));
+    IF v_table_name = '' OR v_table_name !~ '^[a-z][a-z0-9_]{0,47}$' THEN
+        RAISE EXCEPTION 'Invalid subject table identifier.'
+            USING ERRCODE = '22023';
+    END IF;
+
+    IF v_table_name IN (
+        'submission_files',
+        'admin_users',
+        'student_roster',
+        'subject_assignments',
+        'verification_attempts'
+    ) THEN
+        RAISE EXCEPTION 'Protected system table cannot be deleted.'
+            USING ERRCODE = '42501';
+    END IF;
+
+    DELETE FROM public.subject_assignments
+    WHERE table_name = v_table_name
+    RETURNING subject_name INTO v_deleted_name;
+
+    IF v_deleted_name IS NULL AND v_table_name <> 'submissions' THEN
+        RAISE EXCEPTION 'Subject assignment "%" not found.', v_table_name
+            USING ERRCODE = 'P0002';
+    END IF;
+
+    DELETE FROM public.verification_attempts
+    WHERE table_name = v_table_name;
+
+    IF v_table_name = 'submissions' THEN
+        DELETE FROM public.submission_files;
+        DELETE FROM public.submissions;
+    ELSE
+        EXECUTE format('DROP TABLE IF EXISTS public.%I CASCADE', v_table_name);
+    END IF;
+
+    RETURN json_build_object(
+        'success', true,
+        'table_name', v_table_name,
+        'subject_name', COALESCE(v_deleted_name, 'Compiler Construction')
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.delete_subject_assignment(TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.delete_subject_assignment(TEXT) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';

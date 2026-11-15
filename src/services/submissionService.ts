@@ -63,7 +63,7 @@ function initializeLocalSubjects(): SubjectAssignment[] {
     const raw = localStorage.getItem(STORAGE_KEY_SUBJECTS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) return parsed;
     }
   } catch {}
   const initial = [DEFAULT_SUBJECT];
@@ -71,6 +71,22 @@ function initializeLocalSubjects(): SubjectAssignment[] {
     localStorage.setItem(STORAGE_KEY_SUBJECTS, JSON.stringify(initial));
   } catch {}
   return initial;
+}
+
+function updateLocalSubjectEntry(
+  tableName: string,
+  updater: (current: SubjectAssignment, all: SubjectAssignment[]) => SubjectAssignment
+): SubjectAssignment {
+  const existing = initializeLocalSubjects();
+  const idx = existing.findIndex((s) => s.table_name === tableName);
+  if (idx === -1) {
+    throw new Error(`Subject assignment "${tableName}" was not found.`);
+  }
+  const updated = updater(existing[idx], existing);
+  const next = [...existing];
+  next[idx] = updated;
+  localStorage.setItem(STORAGE_KEY_SUBJECTS, JSON.stringify(next));
+  return updated;
 }
 
 function initializeLocalData(tableName = 'submissions'): {
@@ -176,13 +192,24 @@ function isMissingSqlObjectError(err: any): boolean {
   const msg = String(err.message || '').toLowerCase();
   return (
     code === 'PGRST202' ||
+    code === 'PGRST204' ||
     code === 'PGRST205' ||
     code === '42883' ||
     code === '42P01' ||
+    code === '42703' ||
     msg.includes('could not find the table') ||
     msg.includes('could not find the function') ||
+    (msg.includes('could not find the') && msg.includes('column')) ||
     msg.includes('does not exist')
   );
+}
+
+function createAssignmentClosedError(subjectName: string): Error & { code?: string } {
+  const err = new Error(
+    `Assignment deadline passed. Submissions for ${subjectName} are currently closed.`
+  ) as Error & { code?: string };
+  err.code = 'ASSIGNMENT_CLOSED';
+  return err;
 }
 
 function createMigrationRequiredError(detail?: string): Error {
@@ -233,7 +260,7 @@ export const submissionService = {
       if (!error) {
         const list = (data as SubjectAssignment[]) || [];
         return {
-          subjects: list.length > 0 ? list : [DEFAULT_SUBJECT],
+          subjects: list,
           migrationRequired: false,
         };
       }
@@ -317,6 +344,205 @@ export const submissionService = {
   },
 
   /**
+   * Admin: Close a subject assignment (immediately blocks submissions; hides from Select Subject after 24h)
+   */
+  async closeSubjectAssignment(tableName: string): Promise<SubjectAssignment> {
+    const cleanTable = sanitizeText(tableName, 48) || 'submissions';
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.rpc('close_subject_assignment', {
+        p_table_name: cleanTable,
+      });
+
+      if (error) {
+        if (isMissingSqlObjectError(error)) {
+          throw createMigrationRequiredError(
+            'Database function close_subject_assignment() or column closed_at is not installed in Supabase yet. Copy & run supabase/close_assignment_setup.sql in Supabase Dashboard -> SQL Editor.'
+          );
+        }
+        throw new Error(error.message || 'Failed to close subject assignment.');
+      }
+
+      return data as SubjectAssignment;
+    }
+
+    return updateLocalSubjectEntry(cleanTable, (current) => {
+      const nowIso = new Date().toISOString();
+      return {
+        ...current,
+        closed_at: current.closed_at || nowIso,
+        updated_at: nowIso,
+      };
+    });
+  },
+
+  /**
+   * Admin: Revert a closed subject assignment so it immediately becomes available again for students
+   */
+  async revertSubjectAssignment(tableName: string): Promise<SubjectAssignment> {
+    const cleanTable = sanitizeText(tableName, 48) || 'submissions';
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.rpc('revert_subject_assignment', {
+        p_table_name: cleanTable,
+      });
+
+      if (error) {
+        if (isMissingSqlObjectError(error)) {
+          throw createMigrationRequiredError(
+            'Database function revert_subject_assignment() is not installed in Supabase yet. Copy & run supabase/close_assignment_setup.sql in Supabase Dashboard -> SQL Editor.'
+          );
+        }
+        throw new Error(error.message || 'Failed to revert subject assignment.');
+      }
+
+      return data as SubjectAssignment;
+    }
+
+    return updateLocalSubjectEntry(cleanTable, (current) => ({
+      ...current,
+      is_active: true,
+      closed_at: null,
+      updated_at: new Date().toISOString(),
+    }));
+  },
+
+  /**
+   * Admin: Update a subject assignment's display name and submission deadline
+   */
+  async updateSubjectAssignment(
+    tableName: string,
+    subjectName: string,
+    deadline: string
+  ): Promise<SubjectAssignment> {
+    const cleanTable = sanitizeText(tableName, 48) || 'submissions';
+    const cleanName = sanitizeText(subjectName, 100);
+    if (cleanName.length < 2) {
+      throw new Error('Assignment name must be at least 2 characters.');
+    }
+
+    const parsedDate = new Date(deadline);
+    if (!deadline || Number.isNaN(parsedDate.getTime())) {
+      throw new Error('Please choose a valid assignment deadline date and time.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      const { data, error } = await supabase.rpc('update_subject_assignment', {
+        p_table_name: cleanTable,
+        p_subject_name: cleanName,
+        p_deadline: parsedDate.toISOString(),
+      });
+
+      if (error) {
+        if (isMissingSqlObjectError(error)) {
+          throw createMigrationRequiredError(
+            `Supabase SQL setup needed (${error.message}). Copy & run supabase/edit_delete_assignment_setup.sql in Supabase Dashboard -> SQL Editor.`
+          );
+        }
+        throw new Error(error.message || 'Failed to update assignment.');
+      }
+
+      return data as SubjectAssignment;
+    }
+
+    return updateLocalSubjectEntry(cleanTable, (current, existing) => {
+      if (
+        existing.some(
+          (s) =>
+            s.table_name !== cleanTable && s.subject_name.toLowerCase() === cleanName.toLowerCase()
+        )
+      ) {
+        throw new Error(`An assignment named "${cleanName}" already exists.`);
+      }
+      return {
+        ...current,
+        subject_name: cleanName,
+        deadline: parsedDate.toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    });
+  },
+
+  /**
+   * Admin: Permanently delete a subject assignment, its submissions, and its dedicated table
+   */
+  async deleteSubjectAssignment(
+    tableName: string
+  ): Promise<{ table_name: string; subject_name: string }> {
+    const cleanTable = sanitizeText(tableName, 48);
+    if (!cleanTable) {
+      throw new Error('Invalid assignment table identifier.');
+    }
+
+    if (isSupabaseConfigured && supabase) {
+      // Collect stored file paths before dropping the subject table so storage can be cleaned afterward
+      const pathsToRemove: string[] = [];
+      try {
+        const { data: rows } = await supabase.rpc('get_subject_submissions', {
+          p_table_name: cleanTable,
+        });
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            if (Array.isArray(row?.files)) {
+              for (const f of row.files) {
+                if (typeof f?.file_path === 'string' && f.file_path) {
+                  pathsToRemove.push(f.file_path);
+                }
+              }
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: proceed to database deletion even if file list could not be read
+      }
+
+      const { data, error } = await supabase.rpc('delete_subject_assignment', {
+        p_table_name: cleanTable,
+      });
+
+      if (error) {
+        if (isMissingSqlObjectError(error)) {
+          throw createMigrationRequiredError(
+            `Supabase SQL setup needed (${error.message}). Copy & run supabase/edit_delete_assignment_setup.sql in Supabase Dashboard -> SQL Editor.`
+          );
+        }
+        throw new Error(error.message || 'Failed to delete assignment.');
+      }
+
+      if (pathsToRemove.length > 0) {
+        try {
+          await supabase.storage.from('assignments').remove(pathsToRemove);
+        } catch {
+          // Best-effort storage cleanup after DB table removal
+        }
+      }
+
+      return {
+        table_name: String(data?.table_name || cleanTable),
+        subject_name: String(data?.subject_name || cleanTable),
+      };
+    }
+
+    const existing = initializeLocalSubjects();
+    const target = existing.find((s) => s.table_name === cleanTable);
+    if (!target) {
+      throw new Error(`Subject assignment "${cleanTable}" was not found.`);
+    }
+
+    const next = existing.filter((s) => s.table_name !== cleanTable);
+    try {
+      localStorage.setItem(STORAGE_KEY_SUBJECTS, JSON.stringify(next));
+      localStorage.removeItem(getLocalSubmissionKey(cleanTable));
+      localStorage.removeItem(getLocalFilesKey(cleanTable));
+    } catch {}
+
+    return {
+      table_name: cleanTable,
+      subject_name: target.subject_name,
+    };
+  },
+
+  /**
    * Submit or resubmit an assignment to the selected subject's Supabase table
    */
   async submitAssignment(
@@ -359,6 +585,17 @@ export const submissionService = {
 
     // 3. Live Supabase Path
     if (isSupabaseConfigured && supabase) {
+      // Guard against closed subject before uploading PDF to storage
+      const { data: subjState, error: subjErr } = await supabase
+        .from('subject_assignments')
+        .select('closed_at, is_active')
+        .eq('table_name', tableName)
+        .maybeSingle();
+
+      if (!subjErr && subjState && (subjState.closed_at || subjState.is_active === false)) {
+        throw createAssignmentClosedError(subjectName);
+      }
+
       let version = 1;
       let submissionRef = generateSubmissionRef();
 
@@ -426,7 +663,11 @@ export const submissionService = {
         if (isMissingSqlObjectError(submitErr)) {
           throw createMigrationRequiredError();
         }
-        throw new Error(submitErr?.message || 'Database submission failed.');
+        const rpcMsg = submitErr?.message || 'Database submission failed.';
+        if (rpcMsg.toLowerCase().includes('assignment deadline passed')) {
+          throw createAssignmentClosedError(subjectName);
+        }
+        throw new Error(rpcMsg);
       }
 
       onProgress?.(100);
@@ -448,6 +689,11 @@ export const submissionService = {
     }
 
     // 4. Local Offline Test Mode (when Supabase is NOT configured)
+    const localSubject = initializeLocalSubjects().find((s) => s.table_name === tableName);
+    if (localSubject?.closed_at) {
+      throw createAssignmentClosedError(subjectName);
+    }
+
     await new Promise((r) => setTimeout(r, 500));
     onProgress?.(60);
 

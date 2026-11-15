@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { CheckCircle2, AlertTriangle, XCircle, Info, X } from 'lucide-react';
 
@@ -17,8 +18,8 @@ interface ToastContainerProps {
 }
 
 export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismiss }) => {
-  return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-3 max-w-md w-full pointer-events-none px-4 sm:px-0">
+  const toastTree = (
+    <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 z-[60] flex flex-col gap-3 md:max-w-md md:w-full pointer-events-none">
       <AnimatePresence>
         {toasts.map((toast) => {
           const icons = {
@@ -64,4 +65,6 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
       </AnimatePresence>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(toastTree, document.body) : null;
 };
